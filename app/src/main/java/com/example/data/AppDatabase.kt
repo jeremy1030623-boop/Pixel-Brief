@@ -1,6 +1,8 @@
 package com.example.data
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "user_settings")
@@ -28,7 +30,9 @@ data class UserSettings(
     // News Feed
     val displayedNewsCount: Int = 3,
     // System & Permissions
-    val is24HourFormat: Boolean = true
+    val is24HourFormat: Boolean = true,
+    // Gemini Settings
+    val geminiModelSelected: String = "gemini-3.5-flash"
 )
 
 @Dao
@@ -40,7 +44,7 @@ interface UserSettingsDao {
     suspend fun saveUserSettings(settings: UserSettings)
 }
 
-@Database(entities = [UserSettings::class], version = 3, exportSchema = false)
+@Database(entities = [UserSettings::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
 
@@ -48,13 +52,21 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Programmatic schema update: Add column geminiModelSelected safely
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN geminiModelSelected TEXT NOT NULL DEFAULT 'gemini-3.5-flash'")
+            }
+        }
+
         fun getDatabase(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "morning_briefing_db"
-                ).fallbackToDestructiveMigration()
+                ).addMigrations(MIGRATION_3_4)
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance
                 instance

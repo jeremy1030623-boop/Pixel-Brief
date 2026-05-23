@@ -71,6 +71,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                 }
+                updateTime()
             }
         }
     }
@@ -78,12 +79,22 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     fun syncGoogleClockSleepData() {
         viewModelScope.launch(Dispatchers.IO) {
             val currentSettings = _userSettings.value ?: UserSettings()
+            val context = getApplication<Application>().applicationContext
+            val isHCEnabled = currentSettings.isHealthSyncEnabled
+            var sleepHours = 7.5f
+            if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
+                val duration = HealthConnectHelper.readSleepDurationHours(context)
+                if (duration > 0f) {
+                    sleepHours = duration
+                }
+            }
+
             val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
             val timeStr = sdf.format(Date())
             
             val updatedSettings = currentSettings.copy(
                 isSleepSynced = true,
-                sleepHours = 7.5f,
+                sleepHours = sleepHours,
                 sleepSnoringMinutes = 15,
                 sleepCoughCount = 2,
                 lastSyncTime = timeStr
@@ -188,27 +199,38 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun fetchNews() {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return
-
         val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以簡體/繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-3.5-flash"
         
-        val request = GenerateContentRequest(
-            contents = listOf(Content(parts = listOf(Part(text = prompt)))),
-            generationConfig = GenerationConfig(temperature = 0.7f)
-        )
-
         try {
-            val response = RetrofitClient.service.generateContent(apiKey, request)
-            val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-            // Clean JSON if it has markdown code blocks
-            val cleanedJson = jsonText.replace("```json", "").replace("```", "").trim()
+            // Primary client: Google GenAI SDK (com.google.ai.client.generativeai)
+            val responseText = com.example.api.GoogleGenAiClient.generateContent(prompt, modelName)
+            val cleanedJson = responseText.replace("```json", "").replace("```", "").trim()
             
             val json = Json { ignoreUnknownKeys = true }
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
             _newsDetail.value = news
         } catch (e: Exception) {
-            // Error fetching news
+            // Fault-tolerant secondary fallback using direct Retrofit Client
+            val apiKey = BuildConfig.GEMINI_API_KEY
+            if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return
+
+            val request = GenerateContentRequest(
+                contents = listOf(Content(parts = listOf(Part(text = prompt)))),
+                generationConfig = GenerationConfig(temperature = 0.7f)
+            )
+
+            try {
+                val response = RetrofitClient.service.generateContent(apiKey, request)
+                val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+                val cleanedJson = jsonText.replace("```json", "").replace("```", "").trim()
+                
+                val json = Json { ignoreUnknownKeys = true }
+                val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
+                _newsDetail.value = news
+            } catch (ex: Exception) {
+                // Ignore error if both fail
+            }
         }
     }
 }

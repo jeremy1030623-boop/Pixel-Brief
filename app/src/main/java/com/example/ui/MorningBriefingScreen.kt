@@ -1072,6 +1072,7 @@ fun SettingsScreen(
     var editAiActivityAnalysisEnabled by remember { mutableStateOf(settings.aiActivityAnalysisEnabled) }
     var editDisplayedNewsCount by remember { mutableStateOf(settings.displayedNewsCount.toFloat()) }
     var editTimeFormat24State by remember { mutableStateOf(settings.is24HourFormat) }
+    var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
     var editOptimizePixelDevice by remember { mutableStateOf(true) }
 
     val context = LocalContext.current
@@ -1129,7 +1130,8 @@ fun SettingsScreen(
                             tasksIntegrationEnabled = editTasksIntegrationEnabled,
                             aiActivityAnalysisEnabled = editAiActivityAnalysisEnabled,
                             displayedNewsCount = editDisplayedNewsCount.toInt(),
-                            is24HourFormat = editTimeFormat24State
+                            is24HourFormat = editTimeFormat24State,
+                            geminiModelSelected = editGeminiModelSelected
                         )
                         onSave(updated)
                         android.widget.Toast.makeText(context, "設定已成功儲存！", android.widget.Toast.LENGTH_SHORT).show()
@@ -1301,7 +1303,30 @@ fun SettingsScreen(
 
                 // Section 5: 每日新聞 (News Feed)
                 item {
-                    SettingsSectionCard(title = "五、每日新聞") {
+                    SettingsSectionCard(title = "五、每日新聞與端側/雲端 Gemini 設定") {
+                        Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("gemini-3.5-flash" to "Gemini 3.5 Flash", "gemini-2.5-flash" to "Gemini 2.5 Flash").forEach { (code, label) ->
+                                val selected = editGeminiModelSelected == code
+                                Button(
+                                    onClick = { editGeminiModelSelected = code },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selected) Color(0xFF3B82F6) else Color(0xFF1E293B),
+                                        contentColor = if (selected) Color.White else Color(0xFF94A3B8)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp)
+                                        .testTag("gemini_model_${code.replace(".", "_")}_button")
+                                ) {
+                                    Text(label, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
