@@ -1,0 +1,156 @@
+package com.example.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.api.*
+import com.example.data.*
+import com.example.model.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import java.text.SimpleDateFormat
+import java.util.*
+
+import kotlinx.serialization.json.Json
+
+class MorningViewModel(application: Application) : AndroidViewModel(application) {
+    private val db = AppDatabase.getDatabase(application)
+    private val calendarRepository = CalendarRepository(application.contentResolver)
+    
+    private val _userSettings = db.userSettingsDao().getUserSettings()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
+
+    private val _weatherInfo = MutableStateFlow(WeatherInfo())
+    val weatherInfo = _weatherInfo.asStateFlow()
+
+    private val _sleepInfo = MutableStateFlow(SleepInfo())
+    val sleepInfo = _sleepInfo.asStateFlow()
+
+    private val _nextEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
+    val nextEvents = _nextEvents.asStateFlow()
+
+    private val _newsDetail = MutableStateFlow<List<NewsItem>>(
+        listOf(
+            NewsItem(
+                title = "AI 助理今日推薦：清晨高階效能管理",
+                summary = "今天是全新的一天，您可以專注於完成關鍵目標。建議在早晨腦力黃金期優先處理最困難的工作，保持高效睡眠節律。"
+            ),
+            NewsItem(
+                title = "健康提醒：高效率睡眠指南",
+                summary = "昨晚您的睡眠時數約為 6.8 小時。多項研究指出，維持 7 至 8 小時的高品質深層睡眠，能大幅提升專注力及工作效率。"
+            ),
+            NewsItem(
+                title = "清晨漫步：最新戶外天氣狀況",
+                summary = "今天天氣溫和，非常適合在出門前進行 10 分鐘的深呼吸與輕度伸展。早晨光線有助於重新調整您的生理時鐘。"
+            )
+        )
+    )
+    val newsDetail = _newsDetail.asStateFlow()
+
+    private val _currentTime = MutableStateFlow("")
+    val currentTime = _currentTime.asStateFlow()
+
+    val username = _userSettings.map { it?.username ?: "Jeremy" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Jeremy")
+
+    init {
+        updateTime()
+        fetchData()
+        startClock()
+    }
+
+    private fun startClock() {
+        viewModelScope.launch {
+            while (isActive) {
+                updateTime()
+                delay(1000)
+            }
+        }
+    }
+
+    private fun updateTime() {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        _currentTime.value = sdf.format(Date())
+    }
+
+    private fun mapWeatherCode(code: Int): String {
+        return when (code) {
+            0 -> "晴朗"
+            1, 2 -> "多雲時晴"
+            3 -> "陰天"
+            45, 48 -> "起霧"
+            51, 53, 55 -> "毛毛雨"
+            61, 63 -> "局部陣雨"
+            65 -> "大雨"
+            71, 73, 75 -> "降雪"
+            80, 81, 82 -> "短暫陣雨"
+            95, 96, 99 -> "雷陣雨"
+            else -> "多雲"
+        }
+    }
+
+    fun fetchData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Fetch real weather using Open-Meteo
+            try {
+                val weatherData = OpenMeteoClient.service.getForecast()
+                _weatherInfo.value = WeatherInfo(
+                    condition = mapWeatherCode(weatherData.current.weather_code),
+                    currentTemp = weatherData.current.temperature_2m.toInt(),
+                    maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
+                    minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
+                )
+            } catch (e: Exception) {
+                _weatherInfo.value = WeatherInfo(
+                    condition = "多雲時晴",
+                    currentTemp = 28,
+                    maxTemp = 32,
+                    minTemp = 24
+                )
+            }
+
+            // Mock sleep data
+            _sleepInfo.value = SleepInfo(
+                hours = 6.8f,
+                snoringMinutes = 20,
+                coughCount = 1
+            )
+
+            // Fetch Calendar Events
+            try {
+                _nextEvents.value = calendarRepository.getNextEvents()
+            } catch (e: Exception) {
+                // Handle permission or other errors
+            }
+
+            // Fetch News using Gemini
+            fetchNews()
+        }
+    }
+
+    private suspend fun fetchNews() {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return
+
+        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以簡體/繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
+        
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = prompt)))),
+            generationConfig = GenerationConfig(temperature = 0.7f)
+        )
+
+        try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
+            // Clean JSON if it has markdown code blocks
+            val cleanedJson = jsonText.replace("```json", "").replace("```", "").trim()
+            
+            val json = Json { ignoreUnknownKeys = true }
+            val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
+            _newsDetail.value = news
+        } catch (e: Exception) {
+            // Error fetching news
+        }
+    }
+}
