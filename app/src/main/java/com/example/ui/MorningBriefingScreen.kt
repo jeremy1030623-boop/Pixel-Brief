@@ -212,7 +212,7 @@ fun NewsDetailScreen(item: NewsItem, onBack: () -> Unit) {
             contentColor = Color.Black,
             shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
     }
 }

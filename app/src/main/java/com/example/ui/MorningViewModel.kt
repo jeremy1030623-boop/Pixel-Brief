@@ -56,7 +56,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Jeremy")
 
     init {
-        updateTime()
+        // fetchData is already setting up data on IO
         fetchData()
         startClock()
         
@@ -71,7 +71,17 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                 }
-                updateTime()
+            }
+        }
+    }
+
+    private fun startClock() {
+        viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
+                val sdf = SimpleDateFormat(pattern, Locale.getDefault())
+                _currentTime.value = sdf.format(Date())
+                delay(1000)
             }
         }
     }
@@ -123,21 +133,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun startClock() {
-        viewModelScope.launch {
-            while (isActive) {
-                updateTime()
-                delay(1000)
-            }
-        }
-    }
-
-    private fun updateTime() {
-        val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
-        val sdf = SimpleDateFormat(pattern, Locale.getDefault())
-        _currentTime.value = sdf.format(Date())
-    }
-
     private fun mapWeatherCode(code: Int): String {
         return when (code) {
             0 -> "晴朗"
@@ -165,7 +160,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
                     minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _weatherInfo.value = WeatherInfo(
                     condition = "多雲時晴",
                     currentTemp = 28,
@@ -189,7 +184,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             // Fetch Calendar Events
             try {
                 _nextEvents.value = calendarRepository.getNextEvents()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // Handle permission or other errors
             }
 
@@ -210,7 +205,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val json = Json { ignoreUnknownKeys = true }
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
             _newsDetail.value = news
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // Fault-tolerant secondary fallback using direct Retrofit Client
             val apiKey = BuildConfig.GEMINI_API_KEY
             if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return
@@ -228,7 +223,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val json = Json { ignoreUnknownKeys = true }
                 val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
                 _newsDetail.value = news
-            } catch (ex: Exception) {
+            } catch (ex: Throwable) {
                 // Ignore error if both fail
             }
         }

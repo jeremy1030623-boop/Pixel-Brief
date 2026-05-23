@@ -53,7 +53,7 @@ class CalendarRepository(private val contentResolver: ContentResolver) {
                     )
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // Catch all exceptions securely
         }
         return events

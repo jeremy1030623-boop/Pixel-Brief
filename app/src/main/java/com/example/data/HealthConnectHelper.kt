@@ -2,11 +2,6 @@ package com.example.data
 
 import android.content.Context
 import android.util.Log
-import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permission.HealthPermission
-import androidx.health.connect.client.records.SleepSessionRecord
-import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -14,69 +9,82 @@ import java.time.temporal.ChronoUnit
 object HealthConnectHelper {
 
     /**
-     * Checks if the Jetpack Health Connect SDK is available on the device
+     * Checks if the Jetpack Health Connect SDK is available on the device.
+     * Wrapped in Throwable block to catch ClassNotFoundException / NoClassDefFoundError at class loading time.
      */
     fun isSdkAvailable(context: Context): Boolean {
         return try {
-            HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (e: Exception) {
+            androidx.health.connect.client.HealthConnectClient.getSdkStatus(context) == androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE
+        } catch (e: Throwable) {
+            Log.d("HealthConnectHelper", "Health Connect SDK status check failed or class missing", e)
             false
         }
     }
 
     /**
-     * Declares the read permission required for fetching sleep records
+     * Dynamically loads required read permissions without triggering early static initialization crash.
      */
-    val requiredPermissions = setOf(
-        HealthPermission.getReadPermission(SleepSessionRecord::class)
-    )
+    fun getRequiredPermissions(): Set<String> {
+        return try {
+            setOf(
+                androidx.health.connect.client.permission.HealthPermission.getReadPermission(
+                    androidx.health.connect.client.records.SleepSessionRecord::class
+                )
+            )
+        } catch (e: Throwable) {
+            Log.e("HealthConnectHelper", "Could not build required permissions set due to missing classes", e)
+            emptySet()
+        }
+    }
 
     /**
-     * Reads actual sleep records from the device using Jetpack Health Connect
+     * Reads actual sleep records from the device using Jetpack Health Connect.
+     * Everything wrapped in Throwable block to be 100% crash-proof under any emulation/API constraint.
      */
     suspend fun readSleepDurationHours(context: Context): Float {
-        if (!isSdkAvailable(context)) {
-            Log.d("HealthConnectHelper", "Health Connect SDK is not supported or not installed")
-            return 0f
-        }
-        val client = try {
-            HealthConnectClient.getOrCreate(context)
-        } catch (e: Exception) {
-            return 0f
-        }
-
         return try {
-            // Check if required permission is already granted by user
-            val granted = client.permissionController.getGrantedPermissions()
-            if (!granted.containsAll(requiredPermissions)) {
-                Log.d("HealthConnectHelper", "Health Connect Permissions have not been granted yet")
+            if (!isSdkAvailable(context)) {
+                Log.d("HealthConnectHelper", "Health Connect SDK is not supported or not installed")
                 return 0f
             }
-
-            // Real physical query: Read sleep session records for the last 24 hours
-            val endTime = Instant.now()
-            val startTime = endTime.minus(24, ChronoUnit.HOURS)
-
-            val request = ReadRecordsRequest(
-                recordType = SleepSessionRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
-            )
-
-            val response = client.readRecords(request)
-            if (response.records.isNotEmpty()) {
-                var totalMinutes = 0L
-                for (record in response.records) {
-                    val duration = Duration.between(record.startTime, record.endTime)
-                    totalMinutes += duration.toMinutes()
-                }
-                totalMinutes / 60f
-            } else {
-                // Return a mock default if permission was granted but no data exists on the simulator
-                7.2f
-            }
-        } catch (e: Exception) {
-            Log.e("HealthConnectHelper", "Failed to query Health Connect", e)
+            readSleepDurationHoursInternal(context)
+        } catch (e: Throwable) {
+            Log.e("HealthConnectHelper", "Fatal error during readSleepDurationHours", e)
             0f
+        }
+    }
+
+    private suspend fun readSleepDurationHoursInternal(context: Context): Float {
+        val client = androidx.health.connect.client.HealthConnectClient.getOrCreate(context)
+        val permissions = getRequiredPermissions()
+        if (permissions.isEmpty()) return 0f
+
+        val granted = client.permissionController.getGrantedPermissions()
+        if (!granted.containsAll(permissions)) {
+            Log.d("HealthConnectHelper", "Health Connect Permissions have not been granted yet")
+            return 0f
+        }
+
+        // Real dynamic query: Read sleep session records for the last 24 hours
+        val endTime = Instant.now()
+        val startTime = endTime.minus(24, ChronoUnit.HOURS)
+
+        val request = androidx.health.connect.client.request.ReadRecordsRequest(
+            recordType = androidx.health.connect.client.records.SleepSessionRecord::class,
+            timeRangeFilter = androidx.health.connect.client.time.TimeRangeFilter.between(startTime, endTime)
+        )
+
+        val response = client.readRecords(request)
+        return if (response.records.isNotEmpty()) {
+            var totalMinutes = 0L
+            for (record in response.records) {
+                val duration = Duration.between(record.startTime, record.endTime)
+                totalMinutes += duration.toMinutes()
+            }
+            totalMinutes / 60f
+        } else {
+            // Return a default mock value for demo on simulators where permission is granted but no data
+            7.2f
         }
     }
 }

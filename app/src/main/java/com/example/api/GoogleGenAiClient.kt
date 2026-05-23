@@ -34,7 +34,7 @@ object GoogleGenAiClient {
             val model = getModel(modelName)
             val response = model.generateContent(prompt)
             response.text ?: "無內容返回"
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("GoogleGenAiClient", "Google GenAI SDK error", e)
             "SDK 錯誤: ${e.localizedMessage ?: e.message}"
         }
