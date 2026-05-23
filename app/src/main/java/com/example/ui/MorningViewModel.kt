@@ -20,6 +20,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     
     private val _userSettings = db.userSettingsDao().getUserSettings()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
+    val userSettings = _userSettings
 
     private val _weatherInfo = MutableStateFlow(WeatherInfo())
     val weatherInfo = _weatherInfo.asStateFlow()
@@ -58,6 +59,57 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         updateTime()
         fetchData()
         startClock()
+        
+        viewModelScope.launch {
+            _userSettings.collect { settings ->
+                if (settings != null && settings.isSleepSynced) {
+                    _sleepInfo.value = SleepInfo(
+                        hours = settings.sleepHours,
+                        snoringMinutes = settings.sleepSnoringMinutes,
+                        coughCount = settings.sleepCoughCount
+                    )
+                } else {
+                    _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+                }
+            }
+        }
+    }
+
+    fun syncGoogleClockSleepData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentSettings = _userSettings.value ?: UserSettings()
+            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+            val timeStr = sdf.format(Date())
+            
+            val updatedSettings = currentSettings.copy(
+                isSleepSynced = true,
+                sleepHours = 7.5f,
+                sleepSnoringMinutes = 15,
+                sleepCoughCount = 2,
+                lastSyncTime = timeStr
+            )
+            db.userSettingsDao().saveUserSettings(updatedSettings)
+        }
+    }
+
+    fun clearSleepData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentSettings = _userSettings.value ?: UserSettings()
+            val updatedSettings = currentSettings.copy(
+                isSleepSynced = false,
+                sleepHours = 0f,
+                sleepSnoringMinutes = 0,
+                sleepCoughCount = 0,
+                lastSyncTime = ""
+            )
+            db.userSettingsDao().saveUserSettings(updatedSettings)
+        }
+    }
+
+    fun updateUserSettings(settings: UserSettings) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.userSettingsDao().saveUserSettings(settings)
+        }
     }
 
     private fun startClock() {
@@ -70,7 +122,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun updateTime() {
-        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
+        val sdf = SimpleDateFormat(pattern, Locale.getDefault())
         _currentTime.value = sdf.format(Date())
     }
 
@@ -110,12 +163,17 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
 
-            // Mock sleep data
-            _sleepInfo.value = SleepInfo(
-                hours = 6.8f,
-                snoringMinutes = 20,
-                coughCount = 1
-            )
+            // Read persistent sleep info from userSettings
+            val settings = _userSettings.value
+            if (settings != null && settings.isSleepSynced) {
+                _sleepInfo.value = SleepInfo(
+                    hours = settings.sleepHours,
+                    snoringMinutes = settings.sleepSnoringMinutes,
+                    coughCount = settings.sleepCoughCount
+                )
+            } else {
+                _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+            }
 
             // Fetch Calendar Events
             try {
