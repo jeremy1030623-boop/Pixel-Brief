@@ -41,7 +41,8 @@ object HealthConnectHelper {
     data class SleepData(
         val durationHours: Float,
         val snoringMinutes: Int = 0,
-        val coughCount: Int = 0
+        val coughCount: Int = 0,
+        val sleepQuality: String = "正常"
     )
 
     /**
@@ -81,16 +82,34 @@ object HealthConnectHelper {
         )
 
         val response = client.readRecords(request)
-        return if (response.records.isNotEmpty()) {
-            var totalMinutes = 0L
-            for (record in response.records) {
-                val duration = Duration.between(record.startTime, record.endTime)
-                totalMinutes += duration.toMinutes()
-            }
-            SleepData(totalMinutes / 60f)
-        } else {
-            // Demo fallback
-            SleepData(7.2f, 15, 2)
+        if (response.records.isEmpty()) {
+            return SleepData(7.2f, 15, 2, "良好")
         }
+
+        var totalMinutes = 0L
+        var totalSnoring = 0
+        var totalCoughs = 0
+
+        for (record in response.records) {
+            val duration = Duration.between(record.startTime, record.endTime)
+            totalMinutes += duration.toMinutes()
+
+            // Approach A: Parse notes for coughing/snoring info
+            record.notes?.let { notes ->
+                if (notes.contains("snore", ignoreCase = true) || notes.contains("打呼", ignoreCase = true)) {
+                    totalSnoring += 10 // Simplified estimation logic
+                }
+                if (notes.contains("cough", ignoreCase = true) || notes.contains("咳嗽", ignoreCase = true)) {
+                    totalCoughs += 1
+                }
+            }
+        }
+
+        return SleepData(
+            durationHours = totalMinutes / 60f,
+            snoringMinutes = totalSnoring,
+            coughCount = totalCoughs,
+            sleepQuality = if (totalCoughs > 5) "睡眠品質較差" else "睡眠品質良好"
+        )
     }
 }

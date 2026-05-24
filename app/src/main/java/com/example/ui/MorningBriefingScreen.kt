@@ -262,6 +262,16 @@ fun GreetingSection(
         UserAvatar(username)
         Spacer(modifier = Modifier.height(16.dp))
         
+        val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+        val greeting = remember(hour) {
+            when (hour) {
+                in 5..11 -> "早安"
+                in 12..17 -> "午安"
+                in 18..23 -> "晚安"
+                else -> "深夜好"
+            }
+        }
+        
         val nextEvent = events.firstOrNull()
         val eventText = if (nextEvent != null) {
             "\n有什麼是要做:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
@@ -270,7 +280,7 @@ fun GreetingSection(
         }
         
         Text(
-            text = "早安, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
+            text = "$greeting, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
             style = MaterialTheme.typography.bodyLarge,
             color = Color.White,
             textAlign = TextAlign.Center,
