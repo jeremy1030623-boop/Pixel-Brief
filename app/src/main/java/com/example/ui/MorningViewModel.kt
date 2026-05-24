@@ -31,6 +31,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _nextEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val nextEvents = _nextEvents.asStateFlow()
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val _newsDetail = MutableStateFlow<List<NewsItem>>(
         listOf(
             NewsItem(
@@ -52,13 +54,27 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _currentTime = MutableStateFlow("")
     val currentTime = _currentTime.asStateFlow()
 
+    private val _currentTimeFlow = flow {
+        while (true) {
+            val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
+            val sdf = SimpleDateFormat(pattern, Locale.getDefault())
+            emit(sdf.format(Date()))
+            delay(1000)
+        }
+    }.flowOn(Dispatchers.Default)
+
     val username = _userSettings.map { it?.username ?: "Jeremy" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Jeremy")
 
     init {
         // fetchData is already setting up data on IO
         fetchData()
-        startClock()
+        
+        viewModelScope.launch {
+            _currentTimeFlow.collect {
+                _currentTime.value = it
+            }
+        }
         
         viewModelScope.launch {
             _userSettings.collect { settings ->
@@ -71,17 +87,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                 }
-            }
-        }
-    }
-
-    private fun startClock() {
-        viewModelScope.launch(Dispatchers.Default) {
-            while (isActive) {
-                val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
-                val sdf = SimpleDateFormat(pattern, Locale.getDefault())
-                _currentTime.value = sdf.format(Date())
-                delay(1000)
             }
         }
     }
@@ -195,14 +200,13 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun fetchNews() {
         val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以簡體/繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-3.5-flash"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
         
         try {
             // Primary client: Google GenAI SDK (com.google.ai.client.generativeai)
             val responseText = com.example.api.GoogleGenAiClient.generateContent(prompt, modelName)
             val cleanedJson = responseText.replace("```json", "").replace("```", "").trim()
             
-            val json = Json { ignoreUnknownKeys = true }
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
             _newsDetail.value = news
         } catch (e: Throwable) {
@@ -218,10 +222,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val response = RetrofitClient.service.generateContent(apiKey, request)
                 val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-                val cleanedJson = jsonText.replace("```json", "").replace("```", "").trim()
+                val cleanedJsonFallback = jsonText.replace("```json", "").replace("```", "").trim()
                 
-                val json = Json { ignoreUnknownKeys = true }
-                val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
+                val news = json.decodeFromString<List<NewsItem>>(cleanedJsonFallback)
                 _newsDetail.value = news
             } catch (ex: Throwable) {
                 // Ignore error if both fail

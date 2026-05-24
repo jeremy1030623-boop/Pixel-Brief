@@ -2,10 +2,31 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val AuroraMidnight = Color(0xFF0F172A)
+val AuroraDeepIndigo = Color(0xFF1E293B)
+val AuroraOceanic = Color(0xFF00A896)
+val AuroraLavender = Color(0xFFB388FF)
+val AuroraSunburst = Color(0xFFFCD34D)
+val AuroraMint = Color(0xFF34D399)
+val AuroraSlate = Color(0xFF94A3B8)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Theme Colors
+val PrimaryLight = Color(0xFF006A60)
+val OnPrimaryLight = Color(0xFFFFFFFF)
+val PrimaryContainerLight = Color(0xFF74F8E5)
+val OnPrimaryContainerLight = Color(0xFF00201C)
+
+val SecondaryLight = Color(0xFF6B3AB8)
+val OnSecondaryLight = Color(0xFFFFFFFF)
+val SecondaryContainerLight = Color(0xFFEADBFF)
+val OnSecondaryContainerLight = Color(0xFF24005A)
+
+val PrimaryDark = Color(0xFF53DBC9)
+val OnPrimaryDark = Color(0xFF003731)
+val PrimaryContainerDark = Color(0xFF005048)
+val OnPrimaryContainerDark = Color(0xFF74F8E5)
+
+val SecondaryDark = Color(0xFFD2BCFF)
+val OnSecondaryDark = Color(0xFF3B0091)
+val SecondaryContainerDark = Color(0xFF521C9E)
+val OnSecondaryContainerDark = Color(0xFFEADBFF)

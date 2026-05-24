@@ -36,6 +36,7 @@ import com.example.model.WeatherInfo
 import com.example.data.UserSettings
 import androidx.compose.foundation.lazy.LazyColumn
 import com.example.ui.theme.Typography
+import com.example.ui.theme.*
 import java.util.*
 
 import java.text.SimpleDateFormat
@@ -55,11 +56,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val isSleepSynced = userSettings?.isSleepSynced ?: false
     val lastSyncTime = userSettings?.lastSyncTime ?: ""
 
-    val backgroundBrush = getBackgroundBrush(weather.condition)
+    val backgroundBrush = remember(weather.condition) { getBackgroundBrush(weather.condition) }
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
-    var showMockExternalWeatherApp by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val calendarPermissionGranted = remember {
@@ -80,9 +80,11 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
-    val checkAndRequestPermission = {
-        if (!calendarPermissionGranted.value) {
-            permissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+    val checkAndRequestPermission = remember(calendarPermissionGranted.value) {
+        {
+            if (!calendarPermissionGranted.value) {
+                permissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+            }
         }
     }
     
@@ -97,7 +99,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     ) {
         val screenState = when {
             selectedNewsItem != null -> "news_detail"
-            showMockExternalWeatherApp -> "mock_weather"
             isSettingsOpen -> "settings"
             else -> "home"
         }
@@ -113,14 +114,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             selectedNewsItem = null
                         }
                     }
-                }
-                "mock_weather" -> {
-                    SimulatedWeatherApp(
-                        weather = weather,
-                        showFloatingButton = userSettings?.showFloatingBackButton ?: false,
-                        weatherUnit = userSettings?.weatherUnit ?: "C",
-                        onBack = { showMockExternalWeatherApp = false }
-                    )
                 }
                 "settings" -> {
                     SettingsScreen(
@@ -179,13 +172,18 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
-                                tasksIntegrationEnabled = userSettings?.tasksIntegrationEnabled ?: false,
-                                aiActivityAnalysisEnabled = userSettings?.aiActivityAnalysisEnabled ?: false,
                                 onSync = { viewModel.syncGoogleClockSleepData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestPermission() },
                                 onNewsClick = { item -> selectedNewsItem = item },
-                                onWeatherClick = { showMockExternalWeatherApp = true }
+                                onWeatherClick = { 
+                                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.weather")
+                                    if (intent != null) {
+                                        context.startActivity(intent)
+                                    } else {
+                                        android.widget.Toast.makeText(context, "無法打開 Pixel Weather", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             )
                         }
                         
@@ -225,7 +223,7 @@ fun UserAvatar(username: String) {
         modifier = Modifier
             .size(52.dp)
             .clip(RoundedCornerShape(50))
-            .background(Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6)))),
+            .background(Brush.linearGradient(listOf(AuroraOceanic, AuroraLavender))),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -250,9 +248,29 @@ fun GreetingSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { onSettingsClick() }
+                .padding(8.dp)
+                .weight(1f)
+        ) {
+            UserAvatar(username)
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "現在時間 $time",
+                text = "早安, $username",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = time,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -263,48 +281,17 @@ fun GreetingSection(
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color(0xFFF1F5F9)
             )
-            Text(
-                text = "最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFCBD5E1)
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { onSettingsClick() }
-                .padding(8.dp)
-        ) {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "早安, $username",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "點此開啟設定",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            UserAvatar(username)
         }
     }
 }
 
 val ExpressiveShape = RoundedCornerShape(32.dp)
 
-@Composable
 fun getCardBackgroundColor(condition: String): Color {
     return when {
-        condition.contains("雨") -> Color(0xFF1E293B) // Solid Slate Blue
-        condition.contains("多雲") -> Color(0xFF273549) // Solid Cool Grey
-        else -> Color(0xFF4A2A14) // Solid Terracotta Espresso
+        condition.contains("雨") -> AuroraDeepIndigo.copy(alpha = 0.85f)
+        condition.contains("多雲") -> Color(0xFF334155).copy(alpha = 0.85f)
+        else -> AuroraOceanic.copy(alpha = 0.15f) // Subtle tint for clear/sunny
     }
 }
 
@@ -378,8 +365,6 @@ fun WidgetGrid(
     weatherUnit: String,
     isCoughColorAlertEnabled: Boolean,
     displayedNewsCount: Int,
-    tasksIntegrationEnabled: Boolean,
-    aiActivityAnalysisEnabled: Boolean,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
@@ -407,13 +392,6 @@ fun WidgetGrid(
             condition = weather.condition,
             weatherUnit = weatherUnit,
             onWeatherClick = onWeatherClick
-        )
-        ActivityCard(
-            events = events,
-            condition = weather.condition,
-            tasksIntegrationEnabled = tasksIntegrationEnabled,
-            aiActivityAnalysisEnabled = aiActivityAnalysisEnabled,
-            onAuthorize = onAuthorize
         )
         NewsCard(
             news = news,
@@ -714,118 +692,6 @@ fun WeatherCard(
 }
 
 @Composable
-fun ActivityCard(
-    events: List<com.example.data.CalendarEvent>,
-    condition: String,
-    tasksIntegrationEnabled: Boolean,
-    aiActivityAnalysisEnabled: Boolean,
-    onAuthorize: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onAuthorize() },
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
-        shape = ExpressiveShape,
-        border = null
-    ) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("最近活動", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFCBD5E1))
-                if (aiActivityAnalysisEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF8B5CF6).copy(alpha = 0.2f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("🤖 AI 排序推薦", style = MaterialTheme.typography.labelSmall, color = Color(0xFFC084FC), fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Render events
-            val showEvents = if (aiActivityAnalysisEnabled) {
-                // Mock sorting / prioritizing by AI analysis
-                events.sortedBy { it.title.length }
-            } else {
-                events
-            }
-
-            if (showEvents.isEmpty() && !tasksIntegrationEnabled) {
-                Text("無近期活動\n(可點擊授權日曆權限以同步行程)", color = Color(0xFF94A3B8), style = MaterialTheme.typography.bodyMedium)
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    showEvents.take(3).forEach { event ->
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .size(8.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFF81D4FA))
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = event.title + if (aiActivityAnalysisEnabled) " (高推薦度)" else "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    if (tasksIntegrationEnabled) {
-                        // Append Google Tasks list items
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .size(8.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFFCE93D8))
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "✔️ 澆花與晨間伸展",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color(0xFFE2E8F0),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text("來自 Google Tasks: 晨間固定任務", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
-                            }
-                        }
-
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .size(8.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFFCE93D8))
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "✔️ 準備今日主管會報",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color(0xFFE2E8F0),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text("來自 Google Tasks: 重要項目", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, onItemClick: (NewsItem) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -862,12 +728,17 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
     }
 }
 
-@Composable
 fun getBackgroundBrush(condition: String): Brush {
     return when {
-        condition.contains("雨") -> Brush.verticalGradient(listOf(Color(0xFF2C3E50), Color(0xFF000000)))
-        condition.contains("多雲") -> Brush.verticalGradient(listOf(Color(0xFF7F8C8D), Color(0xFF2C3E50)))
-        else -> Brush.verticalGradient(listOf(Color(0xFFF39C12), Color(0xFFD35400))) // Sunny
+        condition.contains("雨") -> Brush.verticalGradient(
+            listOf(AuroraMidnight, Color(0xFF1E1B4B)) // Deep Purple/Night
+        )
+        condition.contains("多雲") -> Brush.verticalGradient(
+            listOf(Color(0xFF1E293B), Color(0xFF0F172A)) // Slate to Midnight
+        )
+        else -> Brush.verticalGradient(
+            listOf(Color(0xFF134E4A), AuroraMidnight) // Teal to Midnight "Aurora" feel
+        )
     }
 }
 
@@ -1079,10 +950,12 @@ fun SettingsScreen(
 
     val context = LocalContext.current
 
+    androidx.activity.compose.BackHandler { onBack() }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A))
+            .background(AuroraMidnight)
             .statusBarsPadding()
     ) {
         Column(
@@ -1111,7 +984,7 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "「早晨簡報」設定",
+                        "專屬設定",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -1140,12 +1013,12 @@ fun SettingsScreen(
                         onBack()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF10B981)
+                        containerColor = AuroraMint
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.height(40.dp).testTag("save_settings_button")
                 ) {
-                    Text("儲存", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("儲存", fontWeight = FontWeight.Bold, color = AuroraMidnight)
                 }
             }
 
@@ -1157,30 +1030,67 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
-                // Section 1: 個人化與介面 (UI & Personalization)
+                // Section 1: 登入與帳號設定 (Login & Account)
                 item {
-                    SettingsSectionCard(title = "一、個人化與介面") {
-                        Text(
-                            "內部暱稱設定",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = Color(0xFF94A3B8),
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = editUsername,
-                            onValueChange = { editUsername = it },
-                            placeholder = { Text("例如：小明") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("username_settings_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF3B82F6),
-                                unfocusedBorderColor = Color(0xFF475569)
-                            ),
-                            singleLine = true
+                    SettingsSectionCard(title = "一、帳號與登入") {
+                        if (editUsername.contains("Google") || editUsername.contains("gmail")) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AuroraMint)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("已登入：$editUsername", color = Color.White)
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { editUsername = "訪客" },
+                                colors = ButtonDefaults.buttonColors(containerColor = AuroraDeepIndigo),
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                            ) {
+                                Text("登出", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = { editUsername = "Google 使用者" },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("G", fontWeight = FontWeight.ExtraBold, color = Color.Blue, fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("使用 Google 帳號登入", color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                "或手動輸入暱稱",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = AuroraSlate,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = editUsername,
+                                onValueChange = { editUsername = it },
+                                placeholder = { Text("例如：小明") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("username_settings_input"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = AuroraMint,
+                                    unfocusedBorderColor = AuroraSlate
+                                ),
+                                singleLine = true
+                            )
+                        }
+                        
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+                        SettingsRow(
+                            label = "導覽列返回設定",
+                            description = "開啟後，點開天气詳細，會於外層右上端額外加上浮動返回簡報捷徑",
+                            checked = editShowFloatingBackButton,
+                            onCheckedChange = { editShowFloatingBackButton = it },
+                            testTag = "floating_back_settings_switch"
                         )
                     }
                 }
@@ -1309,7 +1219,7 @@ fun SettingsScreen(
                         Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("gemini-3.5-flash" to "Gemini 3.5 Flash", "gemini-2.5-flash" to "Gemini 2.5 Flash").forEach { (code, label) ->
+                            listOf("gemini-1.5-flash" to "Gemini 1.5 Flash", "gemini-1.5-pro" to "Gemini 1.5 Pro").forEach { (code, label) ->
                                 val selected = editGeminiModelSelected == code
                                 Button(
                                     onClick = { editGeminiModelSelected = code },
@@ -1335,7 +1245,7 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("顯示新聞重點條數", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                            Text("${editDisplayedNewsCount.toInt()} 條", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+                            Text("${editDisplayedNewsCount.toInt()} 條", style = MaterialTheme.typography.bodyMedium, color = AuroraOceanic, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Slider(

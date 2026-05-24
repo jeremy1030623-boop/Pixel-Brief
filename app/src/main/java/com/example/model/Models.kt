@@ -18,6 +18,6 @@ data class SleepInfo(
 
 @Serializable
 data class NewsItem(
-    val title: String,
-    val summary: String
+    val title: String = "無標題",
+    val summary: String = "尚無摘要內容"
 )

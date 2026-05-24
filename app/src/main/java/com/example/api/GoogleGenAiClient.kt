@@ -10,7 +10,7 @@ object GoogleGenAiClient {
     /**
      * Instantiates the official Google GenAI GenerativeModel object using the registered keys.
      */
-    fun getModel(modelName: String = "gemini-2.5-flash"): GenerativeModel {
+    fun getModel(modelName: String = "gemini-1.5-flash"): GenerativeModel {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val config = generationConfig {
             temperature = 0.7f
@@ -25,7 +25,7 @@ object GoogleGenAiClient {
     /**
      * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContent(prompt: String, modelName: String = "gemini-2.5-flash"): String {
+    suspend fun generateContent(prompt: String, modelName: String = "gemini-1.5-flash"): String {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return "未設定 valid API 金鑰。"
