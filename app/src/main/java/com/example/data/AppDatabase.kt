@@ -32,7 +32,9 @@ data class UserSettings(
     // System & Permissions
     val is24HourFormat: Boolean = true,
     // Gemini Settings
-    val geminiModelSelected: String = "gemini-1.5-flash"
+    val geminiModelSelected: String = "gemini-1.5-flash",
+    // SystemClock Sync Timing
+    val sleepSyncDurationMs: Long = 0
 )
 
 @Dao

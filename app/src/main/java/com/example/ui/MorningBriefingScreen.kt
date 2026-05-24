@@ -49,7 +49,7 @@ import java.util.Date
 fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val weather by viewModel.weatherInfo.collectAsState()
     val username by viewModel.username.collectAsState()
-    val currentTime by viewModel.currentTime.collectAsState()
+    val timeState by viewModel.timeState.collectAsState()
     val sleepInfo by viewModel.sleepInfo.collectAsState()
     val events by viewModel.nextEvents.collectAsState()
     val news by viewModel.newsDetail.collectAsState()
@@ -148,7 +148,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         ) {
                             GreetingSection(
                                 username = username,
-                                time = currentTime,
+                                greeting = timeState.greeting,
+                                time = timeState.time,
                                 weather = weather,
                                 events = events,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
@@ -180,6 +181,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 news = news,
                                 isSleepSynced = isSleepSynced,
                                 lastSyncTime = lastSyncTime,
+                                sleepSyncDurationMs = userSettings?.sleepSyncDurationMs ?: 0L,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
@@ -250,47 +252,52 @@ fun UserAvatar(username: String) {
 fun GreetingSection(
     username: String,
     time: String,
+    greeting: String,
     weather: WeatherInfo,
     events: List<com.example.data.CalendarEvent>,
     weatherUnit: String,
     onSettingsClick: () -> Unit
 ) {
+    // Removed the internal greeting calculation as it is now passed down
+    
+    val nextEvent = events.firstOrNull()
+    val eventText = if (nextEvent != null) {
+        "\n有什麼是要做:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
+    } else {
+        ""
+    }
+    
     Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
-        UserAvatar(username)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UserAvatar(username)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "$greeting $username",
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        
         Spacer(modifier = Modifier.height(16.dp))
         
-        val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-        val greeting = remember(hour) {
-            when (hour) {
-                in 5..11 -> "早安"
-                in 12..17 -> "午安"
-                in 18..23 -> "晚安"
-                else -> "深夜好"
-            }
-        }
-        
-        val nextEvent = events.firstOrNull()
-        val eventText = if (nextEvent != null) {
-            "\n有什麼是要做:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
-        } else {
-            ""
-        }
-        
-        TimeGreetingText(greeting, username, time, eventText, weather, weatherUnit)
+        TimeGreetingText(time, eventText, weather, weatherUnit)
     }
 }
 
 @Composable
-fun TimeGreetingText(greeting: String, username: String, time: String, eventText: String, weather: WeatherInfo, weatherUnit: String) {
+fun TimeGreetingText(time: String, eventText: String, weather: WeatherInfo, weatherUnit: String) {
     Text(
-        text = "$greeting, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
-        style = MaterialTheme.typography.bodyLarge,
+        text = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
+        style = MaterialTheme.typography.titleLarge,
         color = Color.White,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.padding(horizontal = 16.dp)
+        textAlign = TextAlign.Start,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
     )
 }
 
@@ -371,6 +378,7 @@ fun WidgetGrid(
     news: List<NewsItem>,
     isSleepSynced: Boolean,
     lastSyncTime: String,
+    sleepSyncDurationMs: Long,
     weatherUnit: String,
     isCoughColorAlertEnabled: Boolean,
     displayedNewsCount: Int,
@@ -386,6 +394,7 @@ fun WidgetGrid(
                 sleep = sleepInfo,
                 condition = weather.condition,
                 lastSyncTime = lastSyncTime,
+                syncDurationMs = sleepSyncDurationMs,
                 isCoughColorAlertEnabled = isCoughColorAlertEnabled,
                 onClearSync = onClearSync,
                 onReSync = onSync
@@ -507,6 +516,7 @@ fun SleepCard(
     sleep: SleepInfo,
     condition: String,
     lastSyncTime: String,
+    syncDurationMs: Long,
     isCoughColorAlertEnabled: Boolean,
     onClearSync: () -> Unit,
     onReSync: () -> Unit,
@@ -569,7 +579,6 @@ fun SleepCard(
                             if (!isSyncing) {
                                 isSyncing = true
                                 coroutineScope.launch {
-                                    delay(1200)
                                     onReSync()
                                     isSyncing = false
                                     android.widget.Toast.makeText(context, "睡眠資料已重新同步！", android.widget.Toast.LENGTH_SHORT).show()
@@ -641,6 +650,125 @@ fun SleepCard(
                         color = Color(0xFF94A3B8),
                         fontWeight = FontWeight.Light
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Google Health Connect Recommended Sleep Stages Experience (https://developer.android.com/health-and-fitness/health-connect/experiences/sleep)
+            Text(
+                text = "📊 睡眠階段分佈 (根據 Health Connect 規範體驗)",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.9f),
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Multi-segment Horizontal Bar representing different stages
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(4.dp))
+            ) {
+                // Deep Sleep: 25% (Teal)
+                Box(modifier = Modifier.weight(0.25f).fillMaxHeight().background(Color(0xFF2DD4BF)))
+                // Light Sleep: 50% (Sky blue)
+                Box(modifier = Modifier.weight(0.50f).fillMaxHeight().background(Color(0xFF60A5FA)))
+                // REM Sleep: 20% (Pink)
+                Box(modifier = Modifier.weight(0.20f).fillMaxHeight().background(Color(0xFFF472B6)))
+                // Awake: 5% (Amber)
+                Box(modifier = Modifier.weight(0.05f).fillMaxHeight().background(Color(0xFFFBBF24)))
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Legend Row for stages
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("■ 深眠 25%", fontSize = 10.sp, color = Color(0xFF2DD4BF), fontWeight = FontWeight.Bold)
+                Text("■ 淺眠 50%", fontSize = 10.sp, color = Color(0xFF60A5FA), fontWeight = FontWeight.Bold)
+                Text("■ REM動眼 20%", fontSize = 10.sp, color = Color(0xFFF472B6), fontWeight = FontWeight.Bold)
+                Text("■ 清醒 5%", fontSize = 10.sp, color = Color(0xFFFBBF24), fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Use SystemClock elapsedRealtime to measure uptime and timing
+            val uptimeMs = android.os.SystemClock.elapsedRealtime()
+            val uptimeHours = uptimeMs / (1000 * 60 * 60)
+            val uptimeMins = (uptimeMs % (1000 * 60 * 60)) / (1000 * 60)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = "⏱️ 開機持續系統時間：%02d小時 %02d分鐘 (SystemClock 基準)".format(uptimeHours, uptimeMins),
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+                if (syncDurationMs > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "🚀 Health Connect 昨夜睡眠 API 讀取耗時: ${syncDurationMs} ms (SystemClock 診斷)",
+                        fontSize = 11.sp,
+                        color = Color(0xFF2DD4BF),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Custom documentation hyperlinks
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.android.com/health-and-fitness/health-connect/experiences/sleep?hl=zh-tw"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "連結無法開啟", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("睡眠體驗設計指引", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.android.com/reference/android/os/SystemClock"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "連結無法開啟", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("SystemClock 規範", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -1136,15 +1264,6 @@ fun SettingsScreen(
                                 }
                             }
                         }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
-                        SettingsRow(
-                            label = "導覽列返回設定",
-                            description = "開啟後，點開天气詳細，會於外層右上端額外加上浮動返回簡報捷徑",
-                            checked = editShowFloatingBackButton,
-                            onCheckedChange = { editShowFloatingBackButton = it },
-                            testTag = "floating_back_settings_switch"
-                        )
                     }
                 }
 

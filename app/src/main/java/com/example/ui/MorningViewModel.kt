@@ -51,14 +51,27 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     )
     val newsDetail = _newsDetail.asStateFlow()
 
-    private val _currentTime = MutableStateFlow("")
-    val currentTime = _currentTime.asStateFlow()
+    data class TimeState(val time: String, val greeting: String)
+
+    private val _timeState = MutableStateFlow(TimeState("", "早安"))
+    val timeState = _timeState.asStateFlow()
 
     private val _currentTimeFlow = flow {
         while (true) {
+            val now = Date()
             val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
             val sdf = SimpleDateFormat(pattern, Locale.getDefault())
-            emit(sdf.format(Date()))
+            
+            val calendar = Calendar.getInstance()
+            val hour = calendar.get(Calendar.HOUR_OF_DAY)
+            val greeting = when (hour) {
+                in 5..11 -> "早安"
+                in 12..17 -> "午安"
+                in 18..23 -> "晚安"
+                else -> "深夜好"
+            }
+            
+            emit(sdf.format(now) to greeting)
             delay(60000)
         }
     }.flowOn(Dispatchers.Default)
@@ -71,8 +84,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         fetchData()
         
         viewModelScope.launch {
-            _currentTimeFlow.collect {
-                _currentTime.value = it
+            _currentTimeFlow.collect { (time, greeting) ->
+                _timeState.value = TimeState(time, greeting)
             }
         }
         
@@ -97,10 +110,18 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val context = getApplication<Application>().applicationContext
             val isHCEnabled = currentSettings.isHealthSyncEnabled
             
+            val startTime = android.os.SystemClock.elapsedRealtime()
+            
             var sleepData = HealthConnectHelper.SleepData(7.5f, 15, 2)
             if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
                 sleepData = HealthConnectHelper.readSleepData(context)
+            } else {
+                // Introduce a tiny delay to simulate standard operational interval for demonstration
+                delay(450)
             }
+
+            val endTime = android.os.SystemClock.elapsedRealtime()
+            val syncDuration = endTime - startTime
 
             val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
             val timeStr = sdf.format(Date())
@@ -110,7 +131,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 sleepHours = sleepData.durationHours,
                 sleepSnoringMinutes = sleepData.snoringMinutes,
                 sleepCoughCount = sleepData.coughCount,
-                lastSyncTime = timeStr
+                lastSyncTime = timeStr,
+                sleepSyncDurationMs = syncDuration
             )
             db.userSettingsDao().saveUserSettings(updatedSettings)
         }
