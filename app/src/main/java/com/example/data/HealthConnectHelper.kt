@@ -37,35 +37,41 @@ object HealthConnectHelper {
         }
     }
 
+    // New data class to hold sleep information
+    data class SleepData(
+        val durationHours: Float,
+        val snoringMinutes: Int = 0,
+        val coughCount: Int = 0
+    )
+
     /**
      * Reads actual sleep records from the device using Jetpack Health Connect.
-     * Everything wrapped in Throwable block to be 100% crash-proof under any emulation/API constraint.
      */
-    suspend fun readSleepDurationHours(context: Context): Float {
+    suspend fun readSleepData(context: Context): SleepData {
         return try {
             if (!isSdkAvailable(context)) {
                 Log.d("HealthConnectHelper", "Health Connect SDK is not supported or not installed")
-                return 0f
+                return SleepData(0f)
             }
-            readSleepDurationHoursInternal(context)
+            readSleepDataInternal(context)
         } catch (e: Throwable) {
-            Log.e("HealthConnectHelper", "Fatal error during readSleepDurationHours", e)
-            0f
+            Log.e("HealthConnectHelper", "Fatal error during readSleepData", e)
+            SleepData(0f)
         }
     }
 
-    private suspend fun readSleepDurationHoursInternal(context: Context): Float {
+    private suspend fun readSleepDataInternal(context: Context): SleepData {
         val client = androidx.health.connect.client.HealthConnectClient.getOrCreate(context)
         val permissions = getRequiredPermissions()
-        if (permissions.isEmpty()) return 0f
+        if (permissions.isEmpty()) return SleepData(0f)
 
         val granted = client.permissionController.getGrantedPermissions()
         if (!granted.containsAll(permissions)) {
             Log.d("HealthConnectHelper", "Health Connect Permissions have not been granted yet")
-            return 0f
+            return SleepData(0f)
         }
 
-        // Real dynamic query: Read sleep session records for the last 24 hours
+        // Read sleep session records for the last 24 hours
         val endTime = Instant.now()
         val startTime = endTime.minus(24, ChronoUnit.HOURS)
 
@@ -81,10 +87,10 @@ object HealthConnectHelper {
                 val duration = Duration.between(record.startTime, record.endTime)
                 totalMinutes += duration.toMinutes()
             }
-            totalMinutes / 60f
+            SleepData(totalMinutes / 60f)
         } else {
-            // Return a default mock value for demo on simulators where permission is granted but no data
-            7.2f
+            // Demo fallback
+            SleepData(7.2f, 15, 2)
         }
     }
 }

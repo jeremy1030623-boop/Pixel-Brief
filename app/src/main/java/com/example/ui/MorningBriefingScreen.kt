@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -103,6 +105,14 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             else -> "home"
         }
 
+        // Handle back navigation for sub-screens
+        BackHandler(enabled = selectedNewsItem != null || isSettingsOpen) {
+            when {
+                selectedNewsItem != null -> selectedNewsItem = null
+                isSettingsOpen -> isSettingsOpen = false
+            }
+        }
+
         AnimatedContent(
             targetState = screenState,
             label = "ScreenContent"
@@ -140,6 +150,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 username = username,
                                 time = currentTime,
                                 weather = weather,
+                                events = events,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 onSettingsClick = { isSettingsOpen = true }
                             )
@@ -240,48 +251,31 @@ fun GreetingSection(
     username: String,
     time: String,
     weather: WeatherInfo,
+    events: List<com.example.data.CalendarEvent>,
     weatherUnit: String,
     onSettingsClick: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { onSettingsClick() }
-                .padding(8.dp)
-                .weight(1f)
-        ) {
-            UserAvatar(username)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = "早安, $username",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+        UserAvatar(username)
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        val nextEvent = events.firstOrNull()
+        val eventText = if (nextEvent != null) {
+            "\n有什麼是要做:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
+        } else {
+            ""
         }
         
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = time,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${weather.condition} ${formatTemperature(weather.currentTemp, weatherUnit)}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFFF1F5F9)
-            )
-        }
+        Text(
+            text = "早安, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
     }
 }
 
@@ -948,9 +942,8 @@ fun SettingsScreen(
     var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
     var editOptimizePixelDevice by remember { mutableStateOf(true) }
 
-    val context = LocalContext.current
 
-    androidx.activity.compose.BackHandler { onBack() }
+    val context = LocalContext.current
 
     Box(
         modifier = Modifier

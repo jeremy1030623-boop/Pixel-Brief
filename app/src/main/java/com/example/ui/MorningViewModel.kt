@@ -96,12 +96,10 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val currentSettings = _userSettings.value ?: UserSettings()
             val context = getApplication<Application>().applicationContext
             val isHCEnabled = currentSettings.isHealthSyncEnabled
-            var sleepHours = 7.5f
+            
+            var sleepData = HealthConnectHelper.SleepData(7.5f, 15, 2)
             if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
-                val duration = HealthConnectHelper.readSleepDurationHours(context)
-                if (duration > 0f) {
-                    sleepHours = duration
-                }
+                sleepData = HealthConnectHelper.readSleepData(context)
             }
 
             val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -109,9 +107,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             
             val updatedSettings = currentSettings.copy(
                 isSleepSynced = true,
-                sleepHours = sleepHours,
-                sleepSnoringMinutes = 15,
-                sleepCoughCount = 2,
+                sleepHours = sleepData.durationHours,
+                sleepSnoringMinutes = sleepData.snoringMinutes,
+                sleepCoughCount = sleepData.coughCount,
                 lastSyncTime = timeStr
             )
             db.userSettingsDao().saveUserSettings(updatedSettings)
