@@ -58,7 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "morning_briefing_db"
-                ).fallbackToDestructiveMigrationOnDowngrade()
+                ).fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

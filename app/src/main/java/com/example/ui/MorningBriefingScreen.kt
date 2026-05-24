@@ -108,8 +108,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         ) { state ->
             when (state) {
                 "news_detail" -> {
-                    NewsDetailScreen(selectedNewsItem!!) {
-                        selectedNewsItem = null
+                    selectedNewsItem?.let { item ->
+                        NewsDetailScreen(item) {
+                            selectedNewsItem = null
+                        }
                     }
                 }
                 "mock_weather" -> {
