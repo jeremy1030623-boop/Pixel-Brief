@@ -190,11 +190,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 onAuthorize = { checkAndRequestPermission() },
                                 onNewsClick = { item -> selectedNewsItem = item },
                                 onWeatherClick = { 
-                                    val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.weather")
-                                    if (intent != null) {
-                                        context.startActivity(intent)
-                                    } else {
-                                        android.widget.Toast.makeText(context, "無法打開 Pixel Weather", android.widget.Toast.LENGTH_SHORT).show()
+                                    try {
+                                        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.weather")
+                                        if (intent != null) {
+                                            context.startActivity(intent)
+                                        } else {
+                                            android.widget.Toast.makeText(context, "無法打開 Pixel Weather", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Throwable) {
+                                        android.widget.Toast.makeText(context, "無法打開 Pixel Weather: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             )
@@ -305,9 +309,10 @@ val ExpressiveShape = RoundedCornerShape(32.dp)
 
 fun getCardBackgroundColor(condition: String): Color {
     return when {
-        condition.contains("雨") -> AuroraDeepIndigo.copy(alpha = 0.85f)
-        condition.contains("多雲") -> Color(0xFF334155).copy(alpha = 0.85f)
-        else -> AuroraOceanic.copy(alpha = 0.15f) // Subtle tint for clear/sunny
+        condition.contains("雷") -> Color(0xFF6366F1).copy(alpha = 0.25f) // Stormy: Intense Indigo tint
+        condition.contains("雨") -> Color(0xFF3B82F6).copy(alpha = 0.25f) // Rainy: Water Blue tint
+        condition.contains("多雲") || condition.contains("陰") -> Color(0xFF64748B).copy(alpha = 0.25f) // Cloudy: Slate tint
+        else -> Color(0xFFE6A100).copy(alpha = 0.2f) // Sunny: Warm Gold tint
     }
 }
 
@@ -747,7 +752,7 @@ fun SleepCard(
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("睡眠體驗設計指引", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
@@ -867,14 +872,17 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
 
 fun getBackgroundBrush(condition: String): Brush {
     return when {
-        condition.contains("雨") -> Brush.verticalGradient(
-            listOf(AuroraMidnight, Color(0xFF1E1B4B)) // Deep Purple/Night
+        condition.contains("雷") -> Brush.verticalGradient(
+            listOf(Color(0xFF6366F1), Color(0xFF9333EA)) // Stormy: Strong Indigo to Deep Purple
         )
-        condition.contains("多雲") -> Brush.verticalGradient(
-            listOf(Color(0xFF1E293B), Color(0xFF0F172A)) // Slate to Midnight
+        condition.contains("雨") -> Brush.verticalGradient(
+            listOf(Color(0xFF3B82F6), Color(0xFF0D9488)) // Rainy: Rain Blue to Lake Green
+        )
+        condition.contains("多雲") || condition.contains("陰") -> Brush.verticalGradient(
+            listOf(Color(0xFF64748B), Color(0xFF475569)) // Cloudy: Slate Gray to Deep Slate
         )
         else -> Brush.verticalGradient(
-            listOf(Color(0xFF134E4A), AuroraMidnight) // Teal to Midnight "Aurora" feel
+            listOf(Color(0xFFE6A100), Color(0xFFD97706)) // Sunny: Sunlight Gold to Amber Orange
         )
     }
 }

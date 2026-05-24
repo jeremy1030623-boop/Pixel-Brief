@@ -46,7 +46,7 @@ interface UserSettingsDao {
     suspend fun saveUserSettings(settings: UserSettings)
 }
 
-@Database(entities = [UserSettings::class], version = 5, exportSchema = false)
+@Database(entities = [UserSettings::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
 

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -36,8 +38,7 @@ import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
     companion object {
-        @Volatile
-        var globalExceptionStr: String? = null
+        var globalExceptionState = androidx.compose.runtime.mutableStateOf<String?>(null)
     }
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -51,10 +52,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            globalExceptionStr = "Thread [${thread.name}]: ${throwable.stackTraceToString()}"
-            defaultHandler?.uncaughtException(thread, throwable)
+            android.util.Log.e("MainActivity", "Uncaught exception on thread: ${thread.name}", throwable)
+            globalExceptionState.value = "Thread [${thread.name}]: ${throwable.stackTraceToString()}"
         }
 
         var buildError: String? = null
@@ -70,20 +70,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var errorState by remember { mutableStateOf(buildError ?: globalExceptionStr) }
-
-                    // Periodically poll for background exception updates
-                    androidx.compose.runtime.LaunchedEffect(Unit) {
-                        while (true) {
-                            if (globalExceptionStr != null && errorState != globalExceptionStr) {
-                                errorState = globalExceptionStr
-                            }
-                            kotlinx.coroutines.delay(1000)
-                        }
-                    }
-
+                    val errorState = buildError ?: globalExceptionState.value
+                    
                     if (errorState != null) {
-                        DiagnosticErrorScreen(errorText = errorState!!)
+                        DiagnosticErrorScreen(errorText = errorState)
                     } else {
                         MorningBriefingScreen()
                     }
@@ -125,7 +115,7 @@ fun DiagnosticErrorScreen(errorText: String) {
         Surface(
             color = Color(0xFF313244),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.wrapContentHeight()
         ) {
             Text(
                 text = errorText,

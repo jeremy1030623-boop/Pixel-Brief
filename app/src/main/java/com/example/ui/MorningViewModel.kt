@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.MainActivity
 import com.example.api.*
 import com.example.data.*
 import com.example.model.*
@@ -15,11 +16,22 @@ import java.util.*
 import kotlinx.serialization.json.Json
 
 class MorningViewModel(application: Application) : AndroidViewModel(application) {
-    private val db = AppDatabase.getDatabase(application)
+    private val db: AppDatabase? = try { 
+        AppDatabase.getDatabase(application) 
+    } catch (e: Throwable) { 
+        android.util.Log.e("MorningViewModel", "Failed to initialize database", e)
+        MainActivity.globalExceptionState.value = "Database Init Error: ${e.stackTraceToString()}"
+        null 
+    }
+    
     private val calendarRepository = CalendarRepository(application.contentResolver)
     
-    private val _userSettings = db.userSettingsDao().getUserSettings()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
+    private val _userSettings = if (db != null) {
+        db.userSettingsDao().getUserSettings()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
+    } else {
+        MutableStateFlow(UserSettings())
+    }
     val userSettings = _userSettings
 
     private val _weatherInfo = MutableStateFlow(WeatherInfo())
@@ -58,20 +70,24 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private val _currentTimeFlow = flow {
         while (true) {
-            val now = Date()
-            val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
-            val sdf = SimpleDateFormat(pattern, Locale.getDefault())
-            
-            val calendar = Calendar.getInstance()
-            val hour = calendar.get(Calendar.HOUR_OF_DAY)
-            val greeting = when (hour) {
-                in 5..11 -> "早安"
-                in 12..17 -> "午安"
-                in 18..23 -> "晚安"
-                else -> "深夜好"
+            try {
+                val now = Date()
+                val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
+                val sdf = SimpleDateFormat(pattern, Locale.getDefault())
+                
+                val calendar = Calendar.getInstance()
+                val hour = calendar.get(Calendar.HOUR_OF_DAY)
+                val greeting = when (hour) {
+                    in 5..11 -> "早安"
+                    in 12..17 -> "午安"
+                    in 18..23 -> "晚安"
+                    else -> "深夜好"
+                }
+                
+                emit(sdf.format(now) to greeting)
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception in _currentTimeFlow execution", e)
             }
-            
-            emit(sdf.format(now) to greeting)
             delay(60000)
         }
     }.flowOn(Dispatchers.Default)
@@ -84,77 +100,97 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         fetchData()
         
         viewModelScope.launch {
-            _currentTimeFlow.collect { (time, greeting) ->
-                _timeState.value = TimeState(time, greeting)
+            try {
+                _currentTimeFlow.collect { (time, greeting) ->
+                    _timeState.value = TimeState(time, greeting)
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception collect _currentTimeFlow", e)
             }
         }
         
         viewModelScope.launch {
-            _userSettings.collect { settings ->
-                if (settings != null && settings.isSleepSynced) {
-                    _sleepInfo.value = SleepInfo(
-                        hours = settings.sleepHours,
-                        snoringMinutes = settings.sleepSnoringMinutes,
-                        coughCount = settings.sleepCoughCount
-                    )
-                } else {
-                    _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+            try {
+                _userSettings.collect { settings ->
+                    if (settings != null && settings.isSleepSynced) {
+                        _sleepInfo.value = SleepInfo(
+                            hours = settings.sleepHours,
+                            snoringMinutes = settings.sleepSnoringMinutes,
+                            coughCount = settings.sleepCoughCount
+                        )
+                    } else {
+                        _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+                    }
                 }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception collect _userSettings", e)
             }
         }
     }
 
     fun syncGoogleClockSleepData() {
         viewModelScope.launch(Dispatchers.IO) {
-            val currentSettings = _userSettings.value ?: UserSettings()
-            val context = getApplication<Application>().applicationContext
-            val isHCEnabled = currentSettings.isHealthSyncEnabled
-            
-            val startTime = android.os.SystemClock.elapsedRealtime()
-            
-            var sleepData = HealthConnectHelper.SleepData(7.5f, 15, 2)
-            if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
-                sleepData = HealthConnectHelper.readSleepData(context)
-            } else {
-                // Introduce a tiny delay to simulate standard operational interval for demonstration
-                delay(450)
+            try {
+                val currentSettings = _userSettings.value ?: UserSettings()
+                val context = getApplication<Application>().applicationContext
+                val isHCEnabled = currentSettings.isHealthSyncEnabled
+                
+                val startTime = android.os.SystemClock.elapsedRealtime()
+                
+                var sleepData = HealthConnectHelper.SleepData(7.5f, 15, 2)
+                if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
+                    sleepData = HealthConnectHelper.readSleepData(context)
+                } else {
+                    // Introduce a tiny delay to simulate standard operational interval for demonstration
+                    delay(450)
+                }
+
+                val endTime = android.os.SystemClock.elapsedRealtime()
+                val syncDuration = endTime - startTime
+
+                val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                val timeStr = sdf.format(Date())
+                
+                val updatedSettings = currentSettings.copy(
+                    isSleepSynced = true,
+                    sleepHours = sleepData.durationHours,
+                    sleepSnoringMinutes = sleepData.snoringMinutes,
+                    sleepCoughCount = sleepData.coughCount,
+                    lastSyncTime = timeStr,
+                    sleepSyncDurationMs = syncDuration
+                )
+                db?.userSettingsDao()?.saveUserSettings(updatedSettings)
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception during syncGoogleClockSleepData", e)
             }
-
-            val endTime = android.os.SystemClock.elapsedRealtime()
-            val syncDuration = endTime - startTime
-
-            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-            val timeStr = sdf.format(Date())
-            
-            val updatedSettings = currentSettings.copy(
-                isSleepSynced = true,
-                sleepHours = sleepData.durationHours,
-                sleepSnoringMinutes = sleepData.snoringMinutes,
-                sleepCoughCount = sleepData.coughCount,
-                lastSyncTime = timeStr,
-                sleepSyncDurationMs = syncDuration
-            )
-            db.userSettingsDao().saveUserSettings(updatedSettings)
         }
     }
 
     fun clearSleepData() {
         viewModelScope.launch(Dispatchers.IO) {
-            val currentSettings = _userSettings.value ?: UserSettings()
-            val updatedSettings = currentSettings.copy(
-                isSleepSynced = false,
-                sleepHours = 0f,
-                sleepSnoringMinutes = 0,
-                sleepCoughCount = 0,
-                lastSyncTime = ""
-            )
-            db.userSettingsDao().saveUserSettings(updatedSettings)
+            try {
+                val currentSettings = _userSettings.value ?: UserSettings()
+                val updatedSettings = currentSettings.copy(
+                    isSleepSynced = false,
+                    sleepHours = 0f,
+                    sleepSnoringMinutes = 0,
+                    sleepCoughCount = 0,
+                    lastSyncTime = ""
+                )
+                db?.userSettingsDao()?.saveUserSettings(updatedSettings)
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception during clearSleepData", e)
+            }
         }
     }
 
     fun updateUserSettings(settings: UserSettings) {
         viewModelScope.launch(Dispatchers.IO) {
-            db.userSettingsDao().saveUserSettings(settings)
+            try {
+                db?.userSettingsDao()?.saveUserSettings(settings)
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Exception during updateUserSettings", e)
+            }
         }
     }
 
