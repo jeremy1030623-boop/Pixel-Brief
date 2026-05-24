@@ -59,7 +59,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val pattern = if (_userSettings.value?.is24HourFormat == true) "HH:mm" else "hh:mm a"
             val sdf = SimpleDateFormat(pattern, Locale.getDefault())
             emit(sdf.format(Date()))
-            delay(1000)
+            delay(60000)
         }
     }.flowOn(Dispatchers.Default)
 

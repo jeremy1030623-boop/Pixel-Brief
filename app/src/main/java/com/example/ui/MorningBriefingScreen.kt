@@ -279,14 +279,19 @@ fun GreetingSection(
             ""
         }
         
-        Text(
-            text = "$greeting, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        TimeGreetingText(greeting, username, time, eventText, weather, weatherUnit)
     }
+}
+
+@Composable
+fun TimeGreetingText(greeting: String, username: String, time: String, eventText: String, weather: WeatherInfo, weatherUnit: String) {
+    Text(
+        text = "$greeting, $username，現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
+        style = MaterialTheme.typography.bodyLarge,
+        color = Color.White,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
 }
 
 val ExpressiveShape = RoundedCornerShape(32.dp)
