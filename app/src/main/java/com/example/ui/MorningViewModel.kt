@@ -35,6 +35,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     val userSettings: StateFlow<UserSettings?> = _userSettings.asStateFlow()
 
     init {
+        android.util.Log.d("MorningViewModel", "ViewModel Initializing...")
         viewModelScope.launch {
             try {
                 val database = getDb()

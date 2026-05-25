@@ -41,7 +41,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        enableEdgeToEdge()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("FATAL", "Uncaught exception on thread: ${thread.name}", throwable)
+        }
+        
+        try {
+            enableEdgeToEdge()
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "enableEdgeToEdge failed", e)
+        }
 
         setContent {
             MyApplicationTheme {
