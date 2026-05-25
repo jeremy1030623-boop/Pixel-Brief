@@ -701,81 +701,6 @@ fun SleepCard(
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             Spacer(modifier = Modifier.height(12.dp))
-
-            // Use SystemClock elapsedRealtime to measure uptime and timing
-            val uptimeMs = android.os.SystemClock.elapsedRealtime()
-            val uptimeHours = uptimeMs / (1000 * 60 * 60)
-            val uptimeMins = (uptimeMs % (1000 * 60 * 60)) / (1000 * 60)
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                    .padding(10.dp)
-            ) {
-                Text(
-                    text = "⏱️ 開機持續系統時間：%02d小時 %02d分鐘 (SystemClock 基準)".format(uptimeHours, uptimeMins),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                )
-                if (syncDurationMs > 0) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "🚀 Health Connect 昨夜睡眠 API 讀取耗時: ${syncDurationMs} ms (SystemClock 診斷)",
-                        fontSize = 11.sp,
-                        color = Color(0xFF2DD4BF),
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Custom documentation hyperlinks
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.android.com/health-and-fitness/health-connect/experiences/sleep?hl=zh-tw"))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "連結無法開啟", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.weight(1f).height(36.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("睡眠體驗設計指引", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-
-                Button(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.android.com/reference/android/os/SystemClock"))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "連結無法開啟", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.weight(1f).height(36.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569)),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("SystemClock 規範", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-            }
         }
     }
 }
@@ -1091,7 +1016,6 @@ fun SettingsScreen(
     var editDisplayedNewsCount by remember { mutableStateOf(settings.displayedNewsCount.toFloat()) }
     var editTimeFormat24State by remember { mutableStateOf(settings.is24HourFormat) }
     var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
-    var editOptimizePixelDevice by remember { mutableStateOf(true) }
 
 
     val context = LocalContext.current
@@ -1405,69 +1329,6 @@ fun SettingsScreen(
                             onCheckedChange = { editTimeFormat24State = it },
                             testTag = "time_format_settings_switch"
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
-                        SettingsRow(
-                            label = "Pixel 裝置系統底層優化",
-                            description = "若使用 Google Pixel 系列，主動適配底層通知提示框架",
-                            checked = editOptimizePixelDevice,
-                            onCheckedChange = { editOptimizePixelDevice = it },
-                            testTag = "pixel_optimizer_settings_switch"
-                        )
-                        if (editOptimizePixelDevice) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF065F46))
-                                    .padding(12.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("裝置偵測成功：已啟用 Google Pixel 端側專有性能加速", style = MaterialTheme.typography.labelMedium, color = Color(0xFF34D399))
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
-                        Text("權限配置面板", style = MaterialTheme.typography.titleSmall, color = Color.White)
-                        Spacer(modifier = Modifier.height(10.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    android.widget.Toast.makeText(context, "位置權限已獲取", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                                modifier = Modifier.weight(1f).height(40.dp)
-                            ) {
-                                Text("位置授權", style = MaterialTheme.typography.labelSmall)
-                            }
-
-                            Button(
-                                onClick = {
-                                    android.widget.Toast.makeText(context, "麥克風音效權限已獲取", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                                modifier = Modifier.weight(1f).height(40.dp)
-                            ) {
-                                Text("音頻授權", style = MaterialTheme.typography.labelSmall)
-                            }
-
-                            Button(
-                                onClick = {
-                                    android.widget.Toast.makeText(context, "系統通知權限已獲取", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                                modifier = Modifier.weight(1f).height(40.dp)
-                            ) {
-                                Text("通知授權", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
                     }
                 }
             }

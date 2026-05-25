@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
-import com.example.MainActivity
 import com.example.api.*
 import com.example.data.*
 import com.example.model.*
@@ -16,23 +15,42 @@ import java.util.*
 import kotlinx.serialization.json.Json
 
 class MorningViewModel(application: Application) : AndroidViewModel(application) {
-    private val db: AppDatabase? = try { 
-        AppDatabase.getDatabase(application) 
-    } catch (e: Throwable) { 
-        android.util.Log.e("MorningViewModel", "Failed to initialize database", e)
-        MainActivity.globalExceptionState.value = "Database Init Error: ${e.stackTraceToString()}"
-        null 
+    private var dbCache: AppDatabase? = null
+    
+    private fun getDb(): AppDatabase? {
+        if (dbCache != null) return dbCache
+        return try {
+            val db = AppDatabase.getDatabase(getApplication())
+            dbCache = db
+            db
+        } catch (e: Throwable) {
+            android.util.Log.e("MorningViewModel", "Failed to initialize database", e)
+            null
+        }
     }
     
     private val calendarRepository = CalendarRepository(application.contentResolver)
     
-    private val _userSettings = if (db != null) {
-        db.userSettingsDao().getUserSettings()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSettings())
-    } else {
-        MutableStateFlow(UserSettings())
+    private val _userSettings = MutableStateFlow<UserSettings?>(null)
+    val userSettings: StateFlow<UserSettings?> = _userSettings.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try {
+                val database = getDb()
+                if (database != null) {
+                    database.userSettingsDao().getUserSettings().collect { settings ->
+                        _userSettings.value = settings ?: UserSettings()
+                    }
+                } else {
+                    _userSettings.value = UserSettings()
+                }
+            } catch (e: Throwable) {
+                 android.util.Log.e("MorningViewModel", "Error loading settings", e)
+                 _userSettings.value = UserSettings()
+            }
+        }
     }
-    val userSettings = _userSettings
 
     private val _weatherInfo = MutableStateFlow(WeatherInfo())
     val weatherInfo = _weatherInfo.asStateFlow()
@@ -159,7 +177,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     lastSyncTime = timeStr,
                     sleepSyncDurationMs = syncDuration
                 )
-                db?.userSettingsDao()?.saveUserSettings(updatedSettings)
+                getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during syncGoogleClockSleepData", e)
             }
@@ -177,7 +195,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     sleepCoughCount = 0,
                     lastSyncTime = ""
                 )
-                db?.userSettingsDao()?.saveUserSettings(updatedSettings)
+                getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during clearSleepData", e)
             }
@@ -187,7 +205,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     fun updateUserSettings(settings: UserSettings) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                db?.userSettingsDao()?.saveUserSettings(settings)
+                getDb()?.userSettingsDao()?.saveUserSettings(settings)
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during updateUserSettings", e)
             }

@@ -37,32 +37,11 @@ import com.example.ui.MorningBriefingScreen
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
-    companion object {
-        var globalExceptionState = androidx.compose.runtime.mutableStateOf<String?>(null)
-    }
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            // Permission granted, refresh UI if needed
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            android.util.Log.e("MainActivity", "Uncaught exception on thread: ${thread.name}", throwable)
-            globalExceptionState.value = "Thread [${thread.name}]: ${throwable.stackTraceToString()}"
-        }
-
-        var buildError: String? = null
-        try {
-            enableEdgeToEdge()
-        } catch (e: Throwable) {
-            buildError = "EdgeToEdge configuration error: ${e.stackTraceToString()}"
-        }
+        enableEdgeToEdge()
 
         setContent {
             MyApplicationTheme {
@@ -70,60 +49,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val errorState = buildError ?: globalExceptionState.value
-                    
-                    if (errorState != null) {
-                        DiagnosticErrorScreen(errorText = errorState)
-                    } else {
-                        MorningBriefingScreen()
-                    }
+                    MorningBriefingScreen()
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun DiagnosticErrorScreen(errorText: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1E1E2E))
-            .padding(24.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        Text(
-            text = "⚠️ pixel brief 診斷監測中心",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFF38BA8),
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-        Text(
-            text = "應用程式在初始化或運作期間發生了未預期的例外異常。診斷模式已主動捕捉並彙整了詳細的錯誤追蹤堆疊：",
-            fontSize = 14.sp,
-            color = Color(0xFFCDD6F4),
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-        Text(
-            text = "【錯誤異常堆疊追蹤詳細】",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFF9E2AF)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Surface(
-            color = Color(0xFF313244),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-            modifier = Modifier.wrapContentHeight()
-        ) {
-            Text(
-                text = errorText,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                color = Color(0xFFA6E3A1),
-                modifier = Modifier.padding(16.dp)
-            )
         }
     }
 }
