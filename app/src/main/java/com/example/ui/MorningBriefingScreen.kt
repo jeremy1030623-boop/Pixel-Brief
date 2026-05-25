@@ -309,10 +309,10 @@ val ExpressiveShape = RoundedCornerShape(32.dp)
 
 fun getCardBackgroundColor(condition: String): Color {
     return when {
-        condition.contains("雷") -> Color(0xFF6366F1).copy(alpha = 0.25f) // Stormy: Intense Indigo tint
-        condition.contains("雨") -> Color(0xFF3B82F6).copy(alpha = 0.25f) // Rainy: Water Blue tint
-        condition.contains("多雲") || condition.contains("陰") -> Color(0xFF64748B).copy(alpha = 0.25f) // Cloudy: Slate tint
-        else -> Color(0xFFE6A100).copy(alpha = 0.2f) // Sunny: Warm Gold tint
+        condition.contains("雷") -> Color(0xFF6366F1).copy(alpha = 0.45f) // Stormy: Intense Indigo tint
+        condition.contains("雨") -> Color(0xFF3B82F6).copy(alpha = 0.45f) // Rainy: Water Blue tint
+        condition.contains("多雲") || condition.contains("陰") -> Color(0xFF64748B).copy(alpha = 0.45f) // Cloudy: Slate tint
+        else -> Color(0xFFE6A100).copy(alpha = 0.4f) // Sunny: Warm Gold tint
     }
 }
 
@@ -322,13 +322,13 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
         modifier = Modifier.fillMaxWidth().clickable { onAuthorize() },
         colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
         shape = ExpressiveShape,
-        border = null
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFE2E8F0))
+            Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(modifier = Modifier.height(12.dp))
             if (events.isEmpty()) {
-                Text("今天目前沒有預約行程\n(可點擊授權日曆權限以同步行程)", color = Color(0xFF94A3B8), style = MaterialTheme.typography.bodyMedium)
+                Text("今天目前沒有預約行程\n(可點擊授權日曆權限以同步行程)", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
             } else {
                 events.forEach { event ->
                     Row(
@@ -365,7 +365,7 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
                             Text(
                                 text = "在 ${getTimeString(event.startTime)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF94A3B8)
+                                color = Color.White.copy(alpha = 0.85f)
                             )
                         }
                     }
@@ -472,7 +472,7 @@ fun SyncSleepReminderCard(
                     Text(
                         "同步 Google Clock 睡眠資訊以提供專屬今日簡報",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFCBD5E1)
+                        color = Color.White.copy(alpha = 0.9f)
                     )
                 }
             }
@@ -533,7 +533,7 @@ fun SleepCard(
 
     val isAlert = isCoughColorAlertEnabled && sleep.coughCount > 0
     val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition)
-    val cardBorder = if (isAlert) BorderStroke(2.dp, Color(0xFFEF4444)) else null
+    val cardBorder = if (isAlert) BorderStroke(2.5.dp, Color(0xFFEF4444)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -573,7 +573,7 @@ fun SleepCard(
                         Text(
                             "${sleep.hours}小時睡眠",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFCBD5E1)
+                            color = Color.White.copy(alpha = 0.9f)
                         )
                     }
                 }
@@ -602,7 +602,7 @@ fun SleepCard(
                             Icon(
                                 Icons.Default.Sync,
                                 contentDescription = "Re-sync",
-                                tint = Color(0xFFCBD5E1),
+                                tint = Color.White.copy(alpha = 0.85f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -633,17 +633,17 @@ fun SleepCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF94A3B8))
+                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White.copy(alpha = 0.8f))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("打鼾: ${sleep.snoringMinutes}m", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF94A3B8))
+                    Text("打鼾: ${sleep.snoringMinutes}m", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sick, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isAlert) Color(0xFFEF4444) else Color(0xFF94A3B8))
+                    Icon(Icons.Default.Sick, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isAlert) Color(0xFFEF4444) else Color.White.copy(alpha = 0.8f))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         "咳嗽: ${sleep.coughCount}次" + if (isAlert) " (注意)" else "",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (isAlert) Color(0xFFEF4444) else Color(0xFF94A3B8),
+                        color = if (isAlert) Color(0xFFFCA5A5) else Color.White.copy(alpha = 0.8f),
                         fontWeight = if (isAlert) FontWeight.Bold else FontWeight.Normal
                     )
                 }
@@ -652,8 +652,8 @@ fun SleepCard(
                     Text(
                         "已同步 $lastSyncTime",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF94A3B8),
-                        fontWeight = FontWeight.Light
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -719,7 +719,7 @@ fun WeatherCard(
             .clickable { onWeatherClick() },
         colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
         shape = ExpressiveShape,
-        border = null
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
     ) {
         Row(
             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -744,7 +744,7 @@ fun WeatherCard(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color(0xFFCBD5E1))
+                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
                 }
             }
             
@@ -764,10 +764,10 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
         shape = ExpressiveShape,
-        border = null
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
-            Text("今日重點新聞 ($displayedNewsCount 則)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFFE2E8F0))
+            Text("今日重點新聞 ($displayedNewsCount 則)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(modifier = Modifier.height(16.dp))
             if (news.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -784,10 +784,10 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
                     ) {
                         Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(item.summary, style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8), maxLines = 2)
+                        Text(item.summary, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), maxLines = 2)
                     }
                     if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }
@@ -798,16 +798,16 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
 fun getBackgroundBrush(condition: String): Brush {
     return when {
         condition.contains("雷") -> Brush.verticalGradient(
-            listOf(Color(0xFF6366F1), Color(0xFF9333EA)) // Stormy: Strong Indigo to Deep Purple
+            listOf(Color(0xFF4338CA), Color(0xFF1E1B4B)) // Stormy: Deeper Indigo to Midnight
         )
         condition.contains("雨") -> Brush.verticalGradient(
-            listOf(Color(0xFF3B82F6), Color(0xFF0D9488)) // Rainy: Rain Blue to Lake Green
+            listOf(Color(0xFF1D4ED8), Color(0xFF0F172A)) // Rainy: Deeper Blue to Midnight
         )
         condition.contains("多雲") || condition.contains("陰") -> Brush.verticalGradient(
-            listOf(Color(0xFF64748B), Color(0xFF475569)) // Cloudy: Slate Gray to Deep Slate
+            listOf(Color(0xFF475569), Color(0xFF0F172A)) // Cloudy: Darker Slate to Midnight
         )
         else -> Brush.verticalGradient(
-            listOf(Color(0xFFE6A100), Color(0xFFD97706)) // Sunny: Sunlight Gold to Amber Orange
+            listOf(Color(0xFFB45309), Color(0xFF451A03)) // Sunny: Deeper Gold to Deep Brown/Black
         )
     }
 }
