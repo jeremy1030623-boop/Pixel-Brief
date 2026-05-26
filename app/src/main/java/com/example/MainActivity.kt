@@ -33,6 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.MorningBriefingScreen
 import com.example.ui.theme.MyApplicationTheme
 
@@ -53,13 +61,74 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
+                var aiCoreStatus by remember { mutableStateOf<Boolean?>(null) }
+                val context = LocalContext.current
+
+                LaunchedEffect(Unit) {
+                    try {
+                        // Check if AICore package exists
+                        context.packageManager.getPackageInfo("com.google.android.apps.aicore", 0)
+                        aiCoreStatus = true
+                    } catch (e: Exception) {
+                        aiCoreStatus = false
+                    }
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MorningBriefingScreen()
+                    when (aiCoreStatus) {
+                        null -> {
+                            // Loading screen
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("正在檢查 AI Core 相容性...", color = Color.White)
+                            }
+                        }
+                        true -> {
+                            MorningBriefingScreen()
+                        }
+                        false -> {
+                            // Not supported screen
+                            AICoreNotSupportedScreen()
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun AICoreNotSupportedScreen() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F172A))
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = null,
+            tint = Color(0xFFF59E0B),
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "設備不支援",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.White,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "此應用程式專為具備 Android AI Core (Gemini Nano) 的高效能設備設計。您的手機目前不符合執行此 AI 簡報應用的硬體需求。",
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White.copy(alpha = 0.7f),
+            lineHeight = 24.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }
