@@ -74,7 +74,16 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         )
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val locationPermissionGranted = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         calendarPermissionGranted.value = isGranted
@@ -83,16 +92,34 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
-    val checkAndRequestPermission = remember(calendarPermissionGranted.value) {
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        locationPermissionGranted.value = isGranted
+        viewModel.fetchData()
+    }
+
+    val checkAndRequestCalendarPermission = remember(calendarPermissionGranted.value) {
         {
             if (!calendarPermissionGranted.value) {
-                permissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+            }
+        }
+    }
+
+    val checkAndRequestLocationPermission = remember(locationPermissionGranted.value) {
+        {
+            if (!locationPermissionGranted.value) {
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
             }
         }
     }
     
     LaunchedEffect(Unit) {
         visible = true
+        if (!locationPermissionGranted.value) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
     }
 
     Box(
@@ -165,7 +192,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             enter = fadeIn(animationSpec = spring()) + slideInVertically { it / 2 }
                         ) {
                             AgendaSection(events, weather.condition) {
-                                checkAndRequestPermission()
+                                checkAndRequestCalendarPermission()
                             }
                         }
                         
@@ -189,7 +216,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
-                                onAuthorize = { checkAndRequestPermission() },
+                                onAuthorize = { checkAndRequestCalendarPermission() },
                                 onNewsClick = { item -> selectedNewsItem = item },
                                 onWeatherClick = { 
                                     try {

@@ -30,6 +30,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }
     
     private val calendarRepository = CalendarRepository(application.contentResolver)
+    private val locationHelper = LocationHelper(application)
     
     private val _userSettings = MutableStateFlow<UserSettings?>(null)
     val userSettings: StateFlow<UserSettings?> = _userSettings.asStateFlow()
@@ -269,9 +270,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     fun fetchData() {
         viewModelScope.launch(Dispatchers.IO) {
+            // Fetch real location
+            val location = locationHelper.getCurrentLocation()
+            val lat = location?.latitude ?: 25.0330
+            val lon = location?.longitude ?: 121.5654
+            
             // Fetch real weather using Open-Meteo
             try {
-                val weatherData = OpenMeteoClient.service.getForecast()
+                val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
                 _weatherInfo.value = WeatherInfo(
                     condition = mapWeatherCode(weatherData.current.weather_code),
                     currentTemp = weatherData.current.temperature_2m.toInt(),
