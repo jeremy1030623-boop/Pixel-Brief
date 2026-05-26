@@ -66,10 +66,15 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     try {
-                        // Check if AICore package exists
-                        context.packageManager.getPackageInfo("com.google.android.aicore", 0)
-                        aiCoreStatus = true
+                        val packageInfo = context.packageManager.getPackageInfo("com.google.android.aicore", 0)
+                        val isEnabled = packageInfo.applicationInfo?.enabled == true
+                        android.util.Log.d("AICoreCheck", "Package found, enabled: $isEnabled")
+                        aiCoreStatus = isEnabled
+                    } catch (e: PackageManager.NameNotFoundException) {
+                        android.util.Log.e("AICoreCheck", "AICore package not found")
+                        aiCoreStatus = false
                     } catch (e: Exception) {
+                        android.util.Log.e("AICoreCheck", "Error checking AICore", e)
                         aiCoreStatus = false
                     }
                 }
