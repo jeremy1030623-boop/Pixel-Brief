@@ -201,10 +201,12 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun fetchHealthTrend(data: HealthConnectHelper.HealthData): String {
         val prompt = "你是專業的健康分析助手。請分析以下昨晚的健康數據，並提供一句簡短且具體（20-30字以內）的綜合趨勢報告，鼓勵用戶或給予提醒。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}），步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。請直接返回報告內容，不要有標題或引號。"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        // Prioritize gemini-nano for on-device AI Core experience
+        val modelName = "gemini-nano" 
         
         return try {
-            val responseText = com.example.api.GoogleGenAiClient.generateContent(prompt, modelName)
+            val context = getApplication<Application>().applicationContext
+            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
             responseText.trim()
         } catch (e: Throwable) {
             // Fallback trend report
@@ -310,12 +312,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun fetchNews() {
-        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以簡體/繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
+        // Prioritize gemini-nano for on-device AI Core experience
+        val modelName = "gemini-nano"
         
         try {
-            // Primary client: Google GenAI SDK (com.google.ai.client.generativeai)
-            val responseText = com.example.api.GoogleGenAiClient.generateContent(prompt, modelName)
+            val context = getApplication<Application>().applicationContext
+            // Use AICore (nano) with fallback to server-side flash
+            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
             val cleanedJson = responseText.replace("```json", "").replace("```", "").trim()
             
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
