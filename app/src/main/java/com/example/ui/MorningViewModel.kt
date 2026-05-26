@@ -276,22 +276,23 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val lon = location?.longitude ?: 121.5654
             
             // Fetch real weather using Open-Meteo
-            try {
+            val newWeather = try {
                 val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
-                _weatherInfo.value = WeatherInfo(
+                WeatherInfo(
                     condition = mapWeatherCode(weatherData.current.weather_code),
                     currentTemp = weatherData.current.temperature_2m.toInt(),
                     maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
                     minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
                 )
             } catch (e: Throwable) {
-                _weatherInfo.value = WeatherInfo(
+                WeatherInfo(
                     condition = "多雲時晴",
                     currentTemp = 28,
                     maxTemp = 32,
                     minTemp = 24
                 )
             }
+            _weatherInfo.value = newWeather
 
             // Read persistent sleep info from userSettings
             val settings = _userSettings.value
@@ -312,13 +313,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 // Handle permission or other errors
             }
 
-            // Fetch News using Gemini
-            fetchNews()
+            // Fetch News using Gemini with FRESH weather data
+            fetchNews(newWeather)
         }
     }
 
-    private suspend fun fetchNews() {
-        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日，生成 3-5 則今日簡短新聞重點。每則新聞需包含標題和摘要。請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
+    private suspend fun fetchNews(weather: WeatherInfo) {
+        val weatherContext = "目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。"
+        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日以及以下即時天氣資訊生成 3-5 則今日簡短新聞重點。$weatherContext 每則新聞需包含標題和摘要。請以繁體中文（台灣）撰寫。請務必讓其中一則新聞與當前天氣的戶外建議相關。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
         // Prioritize gemini-nano for on-device AI Core experience
         val modelName = "gemini-nano"
         
