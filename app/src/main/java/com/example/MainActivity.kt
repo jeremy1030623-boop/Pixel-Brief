@@ -38,6 +38,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -48,10 +51,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            android.util.Log.e("FATAL", "Uncaught exception on thread: ${thread.name}", throwable)
-        }
         
         try {
             enableEdgeToEdge()
@@ -66,13 +65,24 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     try {
-                        val packageInfo = context.packageManager.getPackageInfo("com.google.android.aicore", 0)
-                        val isEnabled = packageInfo.applicationInfo?.enabled == true
-                        android.util.Log.d("AICoreCheck", "Package found, enabled: $isEnabled")
-                        aiCoreStatus = isEnabled
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        android.util.Log.e("AICoreCheck", "AICore package not found")
-                        aiCoreStatus = false
+                        val pm = context.packageManager
+                        val aicorePackages = listOf("com.google.android.aicore", "com.google.android.apps.aicore")
+                        var supported = false
+                        
+                        for (pkg in aicorePackages) {
+                            try {
+                                val info = pm.getApplicationInfo(pkg, 0)
+                                if (info.enabled) {
+                                    supported = true
+                                    android.util.Log.d("AICoreCheck", "Supported package found: $pkg")
+                                    break
+                                }
+                            } catch (e: PackageManager.NameNotFoundException) {
+                                // Continue to next
+                            }
+                        }
+                        
+                        aiCoreStatus = supported
                     } catch (e: Exception) {
                         android.util.Log.e("AICoreCheck", "Error checking AICore", e)
                         aiCoreStatus = false
@@ -85,17 +95,26 @@ class MainActivity : ComponentActivity() {
                 ) {
                     when (aiCoreStatus) {
                         null -> {
-                            // Loading screen
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("正在檢查 AI Core 相容性...", color = Color.White)
+                            // Loading screen with background for consistency
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0xFF0F172A)), 
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(color = Color.White)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("正在獲取系統能力...", color = Color.White.copy(alpha = 0.7f))
+                                }
                             }
                         }
                         true -> {
                             MorningBriefingScreen()
                         }
                         false -> {
-                            // Not supported screen
-                            AICoreNotSupportedScreen()
+                            // Not supported screen with a retry/bypass for developers
+                            AICoreNotSupportedScreen(onRetry = { aiCoreStatus = null })
                         }
                     }
                 }
@@ -105,7 +124,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AICoreNotSupportedScreen() {
+fun AICoreNotSupportedScreen(onRetry: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -135,5 +154,12 @@ fun AICoreNotSupportedScreen() {
             lineHeight = 24.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(
+            onClick = onRetry,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f))
+        ) {
+            Text("重新檢測", color = Color.White)
+        }
     }
 }

@@ -59,7 +59,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val isSleepSynced = userSettings?.isSleepSynced ?: false
     val lastSyncTime = userSettings?.lastSyncTime ?: ""
 
-    val backgroundBrush = remember(weather.condition) { getBackgroundBrush(weather.condition) }
+    val calendar = Calendar.getInstance()
+    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+    val isNight = hour !in 6..18
+    val backgroundBrush = remember(weather.condition, isNight) { getBackgroundBrush(weather.condition, isNight) }
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -117,7 +120,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     
     LaunchedEffect(Unit) {
         visible = true
-        if (!locationPermissionGranted.value) {
+    }
+
+    LaunchedEffect(visible) {
+        if (visible && !locationPermissionGranted.value) {
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
     }
@@ -338,10 +344,12 @@ val ExpressiveShape = RoundedCornerShape(32.dp)
 
 fun getCardBackgroundColor(condition: String): Color {
     return when {
-        condition.contains("雷") -> Color(0xFF6366F1).copy(alpha = 0.45f) // Stormy: Intense Indigo tint
-        condition.contains("雨") -> Color(0xFF3B82F6).copy(alpha = 0.45f) // Rainy: Water Blue tint
-        condition.contains("多雲") || condition.contains("陰") -> Color(0xFF64748B).copy(alpha = 0.45f) // Cloudy: Slate tint
-        else -> Color(0xFFE6A100).copy(alpha = 0.4f) // Sunny: Warm Gold tint
+        condition.contains("雷") -> Color(0xFF4F46E5).copy(alpha = 0.5f) // Stormy: Intense Indigo
+        condition.contains("雨") -> Color(0xFF2563EB).copy(alpha = 0.5f) // Rainy: Royal Blue
+        condition.contains("雪") -> Color(0xFFF1F5F9).copy(alpha = 0.3f) // Snowy: Soft Slate
+        condition.contains("霧") -> Color(0xFF94A3B8).copy(alpha = 0.4f) // Foggy: Slate
+        condition.contains("陰") || condition.contains("多雲") -> Color(0xFF475569).copy(alpha = 0.45f) // Cloudy: Slate/Gray
+        else -> Color(0xFFF59E0B).copy(alpha = 0.4f) // Sunny: Amber/Gold
     }
 }
 
@@ -834,19 +842,43 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
     }
 }
 
-fun getBackgroundBrush(condition: String): Brush {
+fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
+    if (isNight) {
+        return when {
+            condition.contains("雷") -> Brush.verticalGradient(listOf(Color(0xFF312E81), Color(0xFF1E1B4B), Color(0xFF0F172A)))
+            condition.contains("雨") -> Brush.verticalGradient(listOf(Color(0xFF1E3A8A), Color(0xFF172554), Color(0xFF0F172A)))
+            condition.contains("雪") -> Brush.verticalGradient(listOf(Color(0xFF334155), Color(0xFF1E293B), Color(0xFF0F172A)))
+            else -> Brush.verticalGradient(listOf(Color(0xFF1E1B4B), Color(0xFF0F172A)))
+        }
+    }
+
     return when {
         condition.contains("雷") -> Brush.verticalGradient(
-            listOf(Color(0xFF4338CA), Color(0xFF1E1B4B)) // Stormy: Deeper Indigo to Midnight
+            listOf(Color(0xFF4F46E5), Color(0xFF312E81), Color(0xFF1E1B4B))
         )
         condition.contains("雨") -> Brush.verticalGradient(
-            listOf(Color(0xFF1D4ED8), Color(0xFF0F172A)) // Rainy: Deeper Blue to Midnight
+            listOf(Color(0xFF3B82F6), Color(0xFF1E40AF), Color(0xFF172554))
         )
-        condition.contains("多雲") || condition.contains("陰") -> Brush.verticalGradient(
-            listOf(Color(0xFF475569), Color(0xFF0F172A)) // Cloudy: Darker Slate to Midnight
+        condition.contains("大雨") -> Brush.verticalGradient(
+            listOf(Color(0xFF1E40AF), Color(0xFF1E3A8A), Color(0xFF0F172A))
+        )
+        condition.contains("雪") -> Brush.verticalGradient(
+            listOf(Color(0xFFCBD5E1), Color(0xFF94A3B8), Color(0xFF475569))
+        )
+        condition.contains("霧") -> Brush.verticalGradient(
+            listOf(Color(0xFF94A3B8), Color(0xFF64748B), Color(0xFF475569))
+        )
+        condition.contains("陰") -> Brush.verticalGradient(
+            listOf(Color(0xFF64748B), Color(0xFF475569), Color(0xFF334155))
+        )
+        condition.contains("多雲") -> Brush.verticalGradient(
+            listOf(Color(0xFF38BDF8), Color(0xFF0EA5E9), Color(0xFF0369A1))
+        )
+        condition == "晴朗" -> Brush.verticalGradient(
+            listOf(Color(0xFF0EA5E9), Color(0xFF0284C7), Color(0xFF0369A1))
         )
         else -> Brush.verticalGradient(
-            listOf(Color(0xFFB45309), Color(0xFF451A03)) // Sunny: Deeper Gold to Deep Brown/Black
+            listOf(Color(0xFFF59E0B), Color(0xFFD97706), Color(0xFF92400E))
         )
     }
 }
