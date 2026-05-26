@@ -59,6 +59,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _sleepInfo = MutableStateFlow(SleepInfo())
     val sleepInfo = _sleepInfo.asStateFlow()
 
+    private val _healthInfo = MutableStateFlow(HealthInfo())
+    val healthInfo = _healthInfo.asStateFlow()
+
     private val _nextEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val nextEvents = _nextEvents.asStateFlow()
 
@@ -137,8 +140,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                             snoringMinutes = settings.sleepSnoringMinutes,
                             coughCount = settings.sleepCoughCount
                         )
+                        _healthInfo.value = HealthInfo(
+                            steps = settings.dailySteps,
+                            heartRate = settings.avgHeartRate,
+                            trendReport = settings.healthTrendReport
+                        )
                     } else {
                         _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+                        _healthInfo.value = HealthInfo()
                     }
                 }
             } catch (e: Throwable) {
@@ -147,7 +156,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun syncGoogleClockSleepData() {
+    fun syncHealthData() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentSettings = _userSettings.value ?: UserSettings()
@@ -156,11 +165,10 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 
                 val startTime = android.os.SystemClock.elapsedRealtime()
                 
-                var sleepData = HealthConnectHelper.SleepData(7.5f, 15, 2)
+                var healthData = HealthConnectHelper.HealthData(7.5f, 15, 2, "良好", 8432, 68)
                 if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
-                    sleepData = HealthConnectHelper.readSleepData(context)
+                    healthData = HealthConnectHelper.readHealthData(context)
                 } else {
-                    // Introduce a tiny delay to simulate standard operational interval for demonstration
                     delay(450)
                 }
 
@@ -170,17 +178,42 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                 val timeStr = sdf.format(Date())
                 
+                // Fetch Health Trend using Gemini
+                val trendReport = fetchHealthTrend(healthData)
+
                 val updatedSettings = currentSettings.copy(
                     isSleepSynced = true,
-                    sleepHours = sleepData.durationHours,
-                    sleepSnoringMinutes = sleepData.snoringMinutes,
-                    sleepCoughCount = sleepData.coughCount,
+                    sleepHours = healthData.sleepHours,
+                    sleepSnoringMinutes = healthData.snoringMinutes,
+                    sleepCoughCount = healthData.coughCount,
+                    dailySteps = healthData.dailySteps,
+                    avgHeartRate = healthData.avgHeartRate,
+                    healthTrendReport = trendReport,
                     lastSyncTime = timeStr,
                     sleepSyncDurationMs = syncDuration
                 )
                 getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)
             } catch (e: Throwable) {
-                android.util.Log.e("MorningViewModel", "Exception during syncGoogleClockSleepData", e)
+                android.util.Log.e("MorningViewModel", "Exception during syncHealthData", e)
+            }
+        }
+    }
+
+    private suspend fun fetchHealthTrend(data: HealthConnectHelper.HealthData): String {
+        val prompt = "你是專業的健康分析助手。請分析以下昨晚的健康數據，並提供一句簡短且具體（20-30字以內）的綜合趨勢報告，鼓勵用戶或給予提醒。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}），步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。請直接返回報告內容，不要有標題或引號。"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        
+        return try {
+            val responseText = com.example.api.GoogleGenAiClient.generateContent(prompt, modelName)
+            responseText.trim()
+        } catch (e: Throwable) {
+            // Fallback trend report
+            if (data.sleepHours > 7 && data.dailySteps > 8000) {
+                "您今天的活動量不錯，睡眠品質也有所提升，請繼續保持！"
+            } else if (data.sleepHours < 6) {
+                "昨晚睡眠稍顯不足，建議今天早點休息，並多補充水分。"
+            } else {
+                "今日各項指標穩定，是充滿活力的一天。"
             }
         }
     }
@@ -194,6 +227,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     sleepHours = 0f,
                     sleepSnoringMinutes = 0,
                     sleepCoughCount = 0,
+                    dailySteps = 0,
+                    avgHeartRate = 0,
+                    healthTrendReport = "",
                     lastSyncTime = ""
                 )
                 getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)

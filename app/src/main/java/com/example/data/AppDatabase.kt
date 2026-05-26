@@ -15,6 +15,9 @@ data class UserSettings(
     val sleepSnoringMinutes: Int = 0,
     val sleepCoughCount: Int = 0,
     val lastSyncTime: String = "",
+    val dailySteps: Int = 0,
+    val avgHeartRate: Int = 0,
+    val healthTrendReport: String = "",
     // Weather & Location
     val preciseLocationEnabled: Boolean = true,
     val weatherUnit: String = "C",

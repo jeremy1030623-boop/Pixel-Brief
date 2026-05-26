@@ -16,6 +16,12 @@ data class SleepInfo(
     val coughCount: Int = 2
 )
 
+data class HealthInfo(
+    val steps: Int = 0,
+    val heartRate: Int = 0,
+    val trendReport: String = ""
+)
+
 @Serializable
 data class NewsItem(
     val title: String = "無標題",

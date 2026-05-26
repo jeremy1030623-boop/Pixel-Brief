@@ -51,6 +51,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val username by viewModel.username.collectAsState()
     val timeState by viewModel.timeState.collectAsState()
     val sleepInfo by viewModel.sleepInfo.collectAsState()
+    val healthInfo by viewModel.healthInfo.collectAsState()
     val events by viewModel.nextEvents.collectAsState()
     val news by viewModel.newsDetail.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
@@ -176,6 +177,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         ) {
                             WidgetGrid(
                                 sleepInfo = sleepInfo,
+                                healthInfo = healthInfo,
                                 weather = weather,
                                 events = events,
                                 news = news,
@@ -185,7 +187,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
-                                onSync = { viewModel.syncGoogleClockSleepData() },
+                                onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestPermission() },
                                 onNewsClick = { item -> selectedNewsItem = item },
@@ -378,6 +380,7 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
 @Composable
 fun WidgetGrid(
     sleepInfo: SleepInfo,
+    healthInfo: HealthInfo,
     weather: WeatherInfo,
     events: List<com.example.data.CalendarEvent>,
     news: List<NewsItem>,
@@ -395,8 +398,9 @@ fun WidgetGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (isSleepSynced) {
-            SleepCard(
+            HealthCard(
                 sleep = sleepInfo,
+                health = healthInfo,
                 condition = weather.condition,
                 lastSyncTime = lastSyncTime,
                 syncDurationMs = sleepSyncDurationMs,
@@ -405,7 +409,7 @@ fun WidgetGrid(
                 onReSync = onSync
             )
         } else {
-            SyncSleepReminderCard(
+            SyncHealthReminderCard(
                 condition = weather.condition,
                 onSync = onSync
             )
@@ -426,7 +430,7 @@ fun WidgetGrid(
 }
 
 @Composable
-fun SyncSleepReminderCard(
+fun SyncHealthReminderCard(
     condition: String,
     onSync: () -> Unit,
     modifier: Modifier = Modifier
@@ -455,8 +459,8 @@ fun SyncSleepReminderCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.Alarm,
-                        contentDescription = "Sync Sleep Reminder",
+                        Icons.Default.HealthAndSafety,
+                        contentDescription = "Sync Health Reminder",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
@@ -464,13 +468,13 @@ fun SyncSleepReminderCard(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        "睡眠資料尚未同步",
+                        "健康資料尚未同步",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        "同步 Google Clock 睡眠資訊以提供專屬今日簡報",
+                        "同步 Google Fit 與睡眠資訊以提供專屬今日簡報",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.9f)
                     )
@@ -484,14 +488,14 @@ fun SyncSleepReminderCard(
                     if (!isSyncing) {
                         isSyncing = true
                         coroutineScope.launch {
-                            delay(1800)
+                            delay(1000)
                             onSync()
                             isSyncing = false
-                            android.widget.Toast.makeText(context, "成功同步 Google Clock 睡眠資料！", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "成功同步健康數據與 AI 分析！", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sync_sleep_button"),
+                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sync_health_button"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFF59E0B),
                     contentColor = Color.White
@@ -505,11 +509,11 @@ fun SyncSleepReminderCard(
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("正在同步 Google Clock...", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Text("正在同步資料...", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                 } else {
                     Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("立即同步 Google Clock 睡眠資料", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Text("立即同步健康資料", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -517,8 +521,9 @@ fun SyncSleepReminderCard(
 }
 
 @Composable
-fun SleepCard(
+fun HealthCard(
     sleep: SleepInfo,
+    health: HealthInfo,
     condition: String,
     lastSyncTime: String,
     syncDurationMs: Long,
@@ -533,7 +538,7 @@ fun SleepCard(
 
     val isAlert = isCoughColorAlertEnabled && sleep.coughCount > 0
     val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition)
-    val cardBorder = if (isAlert) BorderStroke(2.5.dp, Color(0xFFEF4444)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+    val cardBorder = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -556,7 +561,7 @@ fun SleepCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Default.Bedtime,
+                            Icons.Default.HealthAndSafety,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
@@ -565,15 +570,15 @@ fun SleepCard(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            "昨晚睡眠",
+                            "今日健康報告",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Text(
-                            "${sleep.hours}小時睡眠",
+                            "上次同步: $lastSyncTime",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.9f)
+                            color = Color.White.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -586,11 +591,11 @@ fun SleepCard(
                                 coroutineScope.launch {
                                     onReSync()
                                     isSyncing = false
-                                    android.widget.Toast.makeText(context, "睡眠資料已重新同步！", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, "健康資料已更新！", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
-                        modifier = Modifier.size(36.dp).testTag("resync_sleep_button")
+                        modifier = Modifier.size(36.dp).testTag("resync_health_button")
                     ) {
                         if (isSyncing) {
                             CircularProgressIndicator(
@@ -607,101 +612,108 @@ fun SleepCard(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    IconButton(
-                        onClick = {
-                            onClearSync()
-                            android.widget.Toast.makeText(context, "已取消同步睡眠資料", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(36.dp).testTag("clear_sleep_button")
-                    ) {
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Health Trends Report powered by Gemini
+            if (health.trendReport.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.1f))
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.Top) {
                         Icon(
-                            Icons.Default.CloudOff,
-                            contentDescription = "Unsync",
-                            tint = Color(0xFFFDA4AF),
-                            modifier = Modifier.size(18.dp)
+                            Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color(0xFFFDE047),
+                            modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = health.trendReport,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
+                            lineHeight = 22.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+            
+            // Grid of health metrics
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HealthMetricItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Bedtime,
+                    label = "睡眠",
+                    value = "${sleep.hours}h",
+                    tint = Color(0xFF818CF8)
+                )
+                HealthMetricItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.DirectionsWalk,
+                    label = "步數",
+                    value = "${health.steps}",
+                    tint = Color(0xFF4ADE80)
+                )
+                HealthMetricItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Favorite,
+                    label = "心率",
+                    value = "${health.heartRate}",
+                    tint = Color(0xFFF87171)
+                )
+            }
+            
+            if (sleep.snoringMinutes > 0 || sleep.coughCount > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White.copy(alpha = 0.6f))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("打鼾: ${sleep.snoringMinutes}m", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Sick, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isAlert) Color(0xFFEF4444) else Color.White.copy(alpha = 0.6f))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "咳嗽: ${sleep.coughCount}次",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isAlert) Color(0xFFFCA5A5) else Color.White.copy(alpha = 0.6f)
                         )
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White.copy(alpha = 0.8f))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("打鼾: ${sleep.snoringMinutes}m", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sick, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isAlert) Color(0xFFEF4444) else Color.White.copy(alpha = 0.8f))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "咳嗽: ${sleep.coughCount}次" + if (isAlert) " (注意)" else "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isAlert) Color(0xFFFCA5A5) else Color.White.copy(alpha = 0.8f),
-                        fontWeight = if (isAlert) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-                
-                if (lastSyncTime.isNotEmpty()) {
-                    Text(
-                        "已同步 $lastSyncTime",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Google Health Connect Recommended Sleep Stages Experience (https://developer.android.com/health-and-fitness/health-connect/experiences/sleep)
-            Text(
-                text = "📊 睡眠階段分佈 (根據 Health Connect 規範體驗)",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.9f),
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Multi-segment Horizontal Bar representing different stages
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-            ) {
-                // Deep Sleep: 25% (Teal)
-                Box(modifier = Modifier.weight(0.25f).fillMaxHeight().background(Color(0xFF2DD4BF)))
-                // Light Sleep: 50% (Sky blue)
-                Box(modifier = Modifier.weight(0.50f).fillMaxHeight().background(Color(0xFF60A5FA)))
-                // REM Sleep: 20% (Pink)
-                Box(modifier = Modifier.weight(0.20f).fillMaxHeight().background(Color(0xFFF472B6)))
-                // Awake: 5% (Amber)
-                Box(modifier = Modifier.weight(0.05f).fillMaxHeight().background(Color(0xFFFBBF24)))
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Legend Row for stages
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("■ 深眠 25%", fontSize = 10.sp, color = Color(0xFF2DD4BF), fontWeight = FontWeight.Bold)
-                Text("■ 淺眠 50%", fontSize = 10.sp, color = Color(0xFF60A5FA), fontWeight = FontWeight.Bold)
-                Text("■ REM動眼 20%", fontSize = 10.sp, color = Color(0xFFF472B6), fontWeight = FontWeight.Bold)
-                Text("■ 清醒 5%", fontSize = 10.sp, color = Color(0xFFFBBF24), fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-            Spacer(modifier = Modifier.height(12.dp))
         }
+    }
+}
+
+@Composable
+fun HealthMetricItem(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    label: String,
+    value: String,
+    tint: Color
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
     }
 }
 
