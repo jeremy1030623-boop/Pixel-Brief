@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     try {
                         // Check if AICore package exists
-                        context.packageManager.getPackageInfo("com.google.android.apps.aicore", 0)
+                        context.packageManager.getPackageInfo("com.google.android.aicore", 0)
                         aiCoreStatus = true
                     } catch (e: Exception) {
                         aiCoreStatus = false
