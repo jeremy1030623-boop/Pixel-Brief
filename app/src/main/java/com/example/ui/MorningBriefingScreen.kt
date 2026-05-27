@@ -20,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -670,11 +672,67 @@ fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
 }
 
 @Composable
+fun GlassmorphicCard(
+    modifier: Modifier = Modifier,
+    containerColor: Color,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val finalModifier = if (onClick != null) {
+        modifier.clickable { onClick() }
+    } else {
+        modifier
+    }
+
+    Box(
+        modifier = finalModifier
+            .fillMaxWidth()
+            .clip(ExpressiveShape)
+    ) {
+        // Blurred backing glow to act as a glass refract layer
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .blur(30.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.12f),
+                            Color.Transparent
+                        ),
+                        radius = 450f
+                    )
+                )
+        )
+        // Translucent background card with soft glass borders and a modern, translucent touch
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = containerColor.copy(alpha = 0.42f)
+            ),
+            border = BorderStroke(
+                1.3.dp,
+                Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.35f),
+                        Color.White.copy(alpha = 0.05f),
+                        Color.White.copy(alpha = 0.20f)
+                    )
+                )
+            ),
+            shape = ExpressiveShape
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
 fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, isNight: Boolean, onAuthorize: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onAuthorize() },
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
-        shape = ExpressiveShape
+    GlassmorphicCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onAuthorize,
+        containerColor = getCardBackgroundColor(condition, isNight)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -799,10 +857,9 @@ fun SyncHealthReminderCard(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight).copy(alpha = 0.95f)),
-        shape = ExpressiveShape
+    GlassmorphicCard(
+        modifier = modifier,
+        containerColor = getCardBackgroundColor(condition, isNight)
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()
@@ -899,10 +956,9 @@ fun HealthCard(
     val isAlert = isCoughColorAlertEnabled && sleep.coughCount > 0
     val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition, isNight)
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cardBg),
-        shape = ExpressiveShape
+    GlassmorphicCard(
+        modifier = modifier,
+        containerColor = cardBg
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(
@@ -1084,12 +1140,10 @@ fun WeatherCard(
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onWeatherClick() },
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
-        shape = ExpressiveShape
+    GlassmorphicCard(
+        modifier = modifier,
+        onClick = onWeatherClick,
+        containerColor = getCardBackgroundColor(condition, isNight)
     ) {
         Row(
             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -1138,10 +1192,9 @@ fun NewsCard(
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
-        shape = ExpressiveShape
+    GlassmorphicCard(
+        modifier = Modifier,
+        containerColor = getCardBackgroundColor(condition, isNight)
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(
