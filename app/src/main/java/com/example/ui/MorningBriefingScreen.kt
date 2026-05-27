@@ -222,10 +222,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
+                                newsMode = userSettings?.newsMode ?: "local",
                                 isNight = isNight,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestCalendarPermission() },
+                                onNewsModeChange = { newMode ->
+                                    val current = userSettings ?: UserSettings()
+                                    viewModel.updateUserSettings(current.copy(newsMode = newMode))
+                                },
                                 onNewsClick = { item -> selectedNewsItem = item },
                                 onWeatherClick = { 
                                     try {
@@ -580,10 +585,12 @@ fun WidgetGrid(
     weatherUnit: String,
     isCoughColorAlertEnabled: Boolean,
     displayedNewsCount: Int,
+    newsMode: String,
     isNight: Boolean,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
+    onNewsModeChange: (String) -> Unit,
     onNewsClick: (NewsItem) -> Unit,
     onWeatherClick: () -> Unit
 ) {
@@ -618,7 +625,9 @@ fun WidgetGrid(
             news = news,
             condition = weather.condition,
             displayedNewsCount = displayedNewsCount,
+            newsMode = newsMode,
             isNight = isNight,
+            onNewsModeChange = onNewsModeChange,
             onItemClick = onNewsClick
         )
     }
@@ -965,18 +974,72 @@ fun WeatherCard(
 }
 
 @Composable
-fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, isNight: Boolean, onItemClick: (NewsItem) -> Unit) {
+fun NewsCard(
+    news: List<NewsItem>,
+    condition: String,
+    displayedNewsCount: Int,
+    newsMode: String,
+    isNight: Boolean,
+    onNewsModeChange: (String) -> Unit,
+    onItemClick: (NewsItem) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
         shape = ExpressiveShape
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
-            Text("今日重點新聞 ($displayedNewsCount 則)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "今日重點新聞 ($displayedNewsCount 則)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Beautiful capsules selector for Local vs International News
+                Row(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(50))
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf("local" to "在地", "international" to "國際").forEach { (code, label) ->
+                        val active = newsMode == code
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    if (active) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                                    RoundedCornerShape(50)
+                                )
+                                .clickable { if (!active) onNewsModeChange(code) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
+                                color = if (active) Color.White else Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
             if (news.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFCE93D8), strokeWidth = 2.dp)
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFCE93D8), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
+                    }
                 }
             } else {
                 val listToRender = news.take(displayedNewsCount)
@@ -1315,6 +1378,7 @@ fun SettingsScreen(
     var editCalendarAccountSelected by remember { mutableStateOf(settings.selectedCalendarAccount) }
     var editTasksIntegrationEnabled by remember { mutableStateOf(settings.tasksIntegrationEnabled) }
     var editAiActivityAnalysisEnabled by remember { mutableStateOf(settings.aiActivityAnalysisEnabled) }
+    var editNewsMode by remember { mutableStateOf(settings.newsMode) }
     var editDisplayedNewsCount by remember { mutableStateOf(settings.displayedNewsCount.toFloat()) }
     var editTimeFormat24State by remember { mutableStateOf(settings.is24HourFormat) }
     var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
@@ -1374,6 +1438,7 @@ fun SettingsScreen(
                             selectedCalendarAccount = editCalendarAccountSelected,
                             tasksIntegrationEnabled = editTasksIntegrationEnabled,
                             aiActivityAnalysisEnabled = editAiActivityAnalysisEnabled,
+                            newsMode = editNewsMode,
                             displayedNewsCount = editDisplayedNewsCount.toInt(),
                             is24HourFormat = editTimeFormat24State,
                             geminiModelSelected = editGeminiModelSelected
@@ -1578,6 +1643,29 @@ fun SettingsScreen(
                 // Section 5: 每日新聞 (News Feed)
                 item {
                     SettingsSectionCard(title = "五、每日新聞與端側/雲端 Gemini 設定") {
+                        Text("新聞內容偏好類型", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("local" to "在地最新新聞", "international" to "國際焦點新聞").forEach { (code, label) ->
+                                val selected = editNewsMode == code
+                                Button(
+                                    onClick = { editNewsMode = code },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selected) Color(0xFF3B82F6) else Color(0xFF1E293B),
+                                        contentColor = if (selected) Color.White else Color(0xFF94A3B8)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp)
+                                        .testTag("news_mode_${code}_button")
+                                ) {
+                                    Text(label, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+
                         Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

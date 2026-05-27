@@ -259,6 +259,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 getDb()?.userSettingsDao()?.saveUserSettings(settings)
+                android.util.Log.d("MorningViewModel", "User settings updated, reloading data actively...")
+                fetchData()
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during updateUserSettings", e)
             }
@@ -335,9 +337,69 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun getCityFromCoordinates(lat: Double, lon: Double): String {
+        return when {
+            lat in 24.95..25.25 && lon in 121.45..121.65 -> "台北"
+            lat in 24.85..25.10 && lon in 121.20..121.49 -> "新北"
+            lat in 24.90..25.15 && lon in 121.00..121.35 -> "桃園"
+            lat in 24.68..24.90 && lon in 120.90..121.15 -> "新竹"
+            lat in 24.30..24.60 && lon in 120.70..120.95 -> "苗栗"
+            lat in 24.05..24.35 && lon in 120.55..120.80 -> "台中"
+            lat in 23.95..24.15 && lon in 120.40..120.65 -> "彰化"
+            lat in 23.70..24.00 && lon in 120.65..121.10 -> "南投"
+            lat in 23.60..23.85 && lon in 120.15..120.55 -> "雲林"
+            lat in 23.35..23.60 && lon in 120.10..120.50 -> "嘉義"
+            lat in 22.85..23.25 && lon in 120.10..120.45 -> "台南"
+            lat in 22.45..22.85 && lon in 120.20..120.60 -> "高雄"
+            lat in 21.85..22.45 && lon in 120.35..120.90 -> "屏東"
+            lat in 24.40..24.99 && lon in 121.60..121.90 -> "宜蘭"
+            lat in 23.40..24.30 && lon in 121.25..121.65 -> "花蓮"
+            lat in 22.30..23.20 && lon in 120.75..121.20 -> "台東"
+            else -> "台灣"
+        }
+    }
+
+    private fun getCityNameFromLocation(location: android.location.Location?): String {
+        if (location == null) return ""
+        try {
+            val context = getApplication<Application>().applicationContext
+            if (android.location.Geocoder.isPresent()) {
+                val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+                val city = addresses?.firstOrNull()?.let {
+                    it.adminArea ?: it.locality ?: it.subAdminArea
+                }
+                if (!city.isNullOrBlank()) {
+                    android.util.Log.d("MorningViewModel", "Geocoder fetched city name: $city")
+                    return city.replace("City", "").replace("County", "").replace("市", "").replace("縣", "").trim()
+                }
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("MorningViewModel", "Geocoder exception", e)
+        }
+        val approx = getCityFromCoordinates(location.latitude, location.longitude)
+        android.util.Log.d("MorningViewModel", "Bounding box fallback city: $approx")
+        return approx
+    }
+
     private suspend fun fetchNews(weather: WeatherInfo) {
+        val newsMode = _userSettings.value?.newsMode ?: "local"
+        var locationText = "台灣"
+        
+        _newsDetail.value = emptyList()
+
         val realNews = try {
-            GoogleNewsFetcher.fetchLatestTaiwanNews()
+            if (newsMode == "international") {
+                locationText = "國際"
+                GoogleNewsFetcher.fetchInternationalNews()
+            } else {
+                val location = locationHelper.getCurrentLocation()
+                val detected = getCityNameFromLocation(location)
+                val defaultOpt = _userSettings.value?.defaultCity ?: "台北"
+                val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultOpt
+                locationText = finalCity
+                GoogleNewsFetcher.fetchNewsByLocation(finalCity)
+            }
         } catch (e: Throwable) {
             android.util.Log.e("MorningViewModel", "Failed to fetch real Google News via RSS", e)
             emptyList()
@@ -347,9 +409,17 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val headlines = realNews.mapIndexed { index, item ->
                 "${index + 1}. [標題] ${item.title} (來源連結: ${item.link})"
             }.joinToString("\n")
-            "以下是今天真實採集到的台灣 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則最重要、對讀者最相關且生活實用的焦點話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+            if (newsMode == "international") {
+                "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+            } else {
+                "以下是今天真實採集到的 [$locationText] 地方與在地 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則與 [$locationText] 地方生活、交通、發展或周邊生活息息相關的在地重要話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+            }
         } else {
-            "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻的在地生活與科技健康新聞話題，`url` 請留空）"
+            if (newsMode == "international") {
+                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻的國際政經、世界脈動與科技健康新聞話題，`url` 請留空）"
+            } else {
+                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則與 [$locationText] 在地生活、地方交通與生活日常息息相關、溫馨且正能量的焦點新聞話題，`url` 請留空）"
+            }
         }
 
         val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。\n請務必讓其中一則簡報重點與今日天氣及戶外活動建議呼應。\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切精簡的早安摘要...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"

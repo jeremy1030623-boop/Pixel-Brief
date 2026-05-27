@@ -21,11 +21,9 @@ object GoogleNewsFetcher {
     )
 
     /**
-     * Fetches the latest Taiwan Google News using the official RSS feed channel.
-     * Guaranteed to work dynamically and stably.
+     * Fetches news from a general Google News RSS feed URL.
      */
-    suspend fun fetchLatestTaiwanNews(): List<NewsArticle> = withContext(Dispatchers.IO) {
-        val url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    suspend fun fetchNewsFromUrl(url: String): List<NewsArticle> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -34,17 +32,41 @@ object GoogleNewsFetcher {
         try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                Log.e("GoogleNewsFetcher", "Unsuccessful response code: ${response.code}")
+                Log.e("GoogleNewsFetcher", "Unsuccessful response code: ${response.code} for URL: $url")
                 return@withContext emptyList()
             }
             val xmlText = response.body?.string() ?: ""
             val parsed = parseRssXml(xmlText)
-            Log.d("GoogleNewsFetcher", "Successfully fetched ${parsed.size} news from RSS")
+            Log.d("GoogleNewsFetcher", "Successfully fetched ${parsed.size} news from RSS: $url")
             return@withContext parsed
         } catch (e: Throwable) {
-            Log.e("GoogleNewsFetcher", "Failed to fetch Google RSS News", e)
+            Log.e("GoogleNewsFetcher", "Failed to fetch Google RSS News from $url", e)
             return@withContext emptyList()
         }
+    }
+
+    /**
+     * Fetches the latest Taiwan Google News.
+     */
+    suspend fun fetchLatestTaiwanNews(): List<NewsArticle> {
+        return fetchNewsFromUrl("https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
+    }
+
+    /**
+     * Fetches international (world) news in Traditional Chinese.
+     */
+    suspend fun fetchInternationalNews(): List<NewsArticle> {
+        return fetchNewsFromUrl("https://news.google.com/rss/headlines/section/topic/WORLD?hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
+    }
+
+    /**
+     * Fetches news based on a specific location (city/county name).
+     */
+    suspend fun fetchNewsByLocation(city: String): List<NewsArticle> {
+        val cleanQuery = city.trim()
+        val query = if (cleanQuery.isNotEmpty()) cleanQuery else "台灣"
+        val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+        return fetchNewsFromUrl("https://news.google.com/rss/search?q=$encodedQuery&hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
     }
 
     private fun parseRssXml(xml: String): List<NewsArticle> {

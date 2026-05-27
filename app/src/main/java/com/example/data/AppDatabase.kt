@@ -32,6 +32,7 @@ data class UserSettings(
     val aiActivityAnalysisEnabled: Boolean = false,
     // News Feed
     val displayedNewsCount: Int = 3,
+    val newsMode: String = "local", // "local" or "international"
     // System & Permissions
     val is24HourFormat: Boolean = true,
     // Gemini Settings
@@ -49,7 +50,7 @@ interface UserSettingsDao {
     suspend fun saveUserSettings(settings: UserSettings)
 }
 
-@Database(entities = [UserSettings::class], version = 6, exportSchema = false)
+@Database(entities = [UserSettings::class], version = 7, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
 
