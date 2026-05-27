@@ -42,8 +42,9 @@ object GoogleGenAiClient {
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return "未設定 valid API 金鑰。"
         }
+        val actualModel = if (modelName == "gemini-nano") "gemini-1.5-flash" else modelName
         return try {
-            val model = getModel(modelName)
+            val model = getModel(actualModel)
             val response = model.generateContent(prompt)
             response.text ?: "無內容返回"
         } catch (e: Throwable) {

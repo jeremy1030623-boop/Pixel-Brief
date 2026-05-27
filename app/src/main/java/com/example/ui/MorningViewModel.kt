@@ -88,7 +88,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     data class TimeState(val time: String, val greeting: String)
 
-    private val _timeState = MutableStateFlow(TimeState("", "早安"))
+    private val _timeState = MutableStateFlow(TimeState("", "Good morning,"))
     val timeState = _timeState.asStateFlow()
 
     private val _currentTimeFlow = flow {
@@ -101,10 +101,10 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val calendar = Calendar.getInstance()
                 val hour = calendar.get(Calendar.HOUR_OF_DAY)
                 val greeting = when (hour) {
-                    in 5..11 -> "早安"
-                    in 12..17 -> "午安"
-                    in 18..23 -> "晚安"
-                    else -> "深夜好"
+                    in 5..11 -> "Good morning,"
+                    in 12..17 -> "Good afternoon,"
+                    in 18..23 -> "Good evening,"
+                    else -> "Hi there,"
                 }
                 
                 emit(sdf.format(now) to greeting)

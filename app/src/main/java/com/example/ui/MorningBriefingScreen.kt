@@ -122,12 +122,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         visible = true
     }
 
-    LaunchedEffect(visible) {
-        if (visible && !locationPermissionGranted.value) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -154,7 +148,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             when (state) {
                 "news_detail" -> {
                     selectedNewsItem?.let { item ->
-                        NewsDetailScreen(item) {
+                        NewsDetailScreen(item, isNight) {
                             selectedNewsItem = null
                         }
                     }
@@ -187,7 +181,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weather = weather,
                                 events = events,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
-                                onSettingsClick = { isSettingsOpen = true }
+                                isNight = isNight,
+                                onSettingsClick = { isSettingsOpen = true },
+                                onNameChange = { newName ->
+                                    val current = userSettings ?: UserSettings()
+                                    viewModel.updateUserSettings(current.copy(username = newName))
+                                },
+                                onRefreshLocation = {
+                                    checkAndRequestLocationPermission()
+                                }
                             )
                         }
                         
@@ -197,7 +199,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             visible = visible,
                             enter = fadeIn(animationSpec = spring()) + slideInVertically { it / 2 }
                         ) {
-                            AgendaSection(events, weather.condition) {
+                            AgendaSection(events, weather.condition, isNight) {
                                 checkAndRequestCalendarPermission()
                             }
                         }
@@ -220,6 +222,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
+                                isNight = isNight,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestCalendarPermission() },
@@ -248,20 +251,35 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
 }
 
 @Composable
-fun NewsDetailScreen(item: NewsItem, onBack: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize().padding(24.dp).statusBarsPadding()) {
+fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isNight) AuroraMidnight else Color(0xFFF8FAFC))
+            .padding(24.dp)
+            .statusBarsPadding()
+    ) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Text(item.title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, color = Color.White)
+            Text(
+                item.title,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Black,
+                color = if (isNight) Color.White else Color(0xFF0F172A)
+            )
             Spacer(modifier = Modifier.height(24.dp))
-            Text(item.summary, style = MaterialTheme.typography.bodyLarge, color = Color(0xFFF1F5F9))
+            Text(
+                item.summary,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isNight) Color(0xFFF1F5F9) else Color(0xFF334155)
+            )
             Spacer(modifier = Modifier.height(100.dp)) // Padding for FAB so it doesn't overlap text
         }
         
         FloatingActionButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
-            containerColor = Color.White,
-            contentColor = Color.Black,
+            containerColor = if (isNight) Color.White else AuroraMidnight,
+            contentColor = if (isNight) Color.Black else Color.White,
             shape = RoundedCornerShape(16.dp)
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -295,9 +313,17 @@ fun GreetingSection(
     weather: WeatherInfo,
     events: List<com.example.data.CalendarEvent>,
     weatherUnit: String,
-    onSettingsClick: () -> Unit
+    isNight: Boolean,
+    onSettingsClick: () -> Unit,
+    onNameChange: (String) -> Unit,
+    onRefreshLocation: () -> Unit
 ) {
-    // Removed the internal greeting calculation as it is now passed down
+    var isEditingName by remember { mutableStateOf(false) }
+    var tempName by remember { mutableStateOf(username) }
+
+    LaunchedEffect(username) {
+        tempName = username
+    }
     
     val nextEvent = events.firstOrNull()
     val eventText = if (nextEvent != null) {
@@ -305,61 +331,184 @@ fun GreetingSection(
     } else {
         ""
     }
+
+    if (isEditingName) {
+        AlertDialog(
+            onDismissRequest = { isEditingName = false },
+            title = {
+                Text(
+                    "修改您的暱稱",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "這將會用於早晨簡報的問候。您可以點擊「儲存」來儲存新的名字。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    OutlinedTextField(
+                        value = tempName,
+                        onValueChange = { tempName = it },
+                        label = { Text("您的名字") },
+                        modifier = Modifier.fillMaxWidth().testTag("edit_username_dialog_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AuroraMint,
+                            unfocusedBorderColor = AuroraSlate,
+                            focusedLabelColor = AuroraMint,
+                            unfocusedLabelColor = AuroraSlate
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (tempName.isNotBlank()) {
+                            onNameChange(tempName.trim())
+                            isEditingName = false
+                        }
+                    },
+                    modifier = Modifier.testTag("save_username_dialog_button")
+                ) {
+                    Text("儲存", color = AuroraMint, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isEditingName = false }) {
+                    Text("取消", color = Color.White.copy(alpha = 0.6f))
+                }
+            },
+            containerColor = AuroraDeepIndigo,
+            textContentColor = Color.White
+        )
+    }
     
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isEditingName = true }
+                .padding(vertical = 4.dp)
+                .testTag("greeting_section_interactive_row"),
             verticalAlignment = Alignment.CenterVertically
         ) {
             UserAvatar(username)
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = "$greeting $username",
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "$greeting $username",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = if (isNight) Color.White else Color(0xFF1E293B),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "編輯姓名",
+                        tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF1E293B).copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    text = "點擊以修改暱稱",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF1E293B).copy(alpha = 0.5f)
+                )
+            }
         }
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        TimeGreetingText(time, eventText, weather, weatherUnit)
+        TimeGreetingText(time, eventText, weather, weatherUnit, onRefreshLocation, isNight)
     }
 }
 
 @Composable
-fun TimeGreetingText(time: String, eventText: String, weather: WeatherInfo, weatherUnit: String) {
-    Text(
-        text = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
-        style = MaterialTheme.typography.titleLarge,
-        color = Color.White,
-        textAlign = TextAlign.Start,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-    )
+fun TimeGreetingText(
+    time: String,
+    eventText: String,
+    weather: WeatherInfo,
+    weatherUnit: String,
+    onRefreshLocation: () -> Unit,
+    isNight: Boolean
+) {
+    Column {
+        Text(
+            text = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
+            style = MaterialTheme.typography.titleLarge,
+            color = if (isNight) Color.White else Color(0xFF1E293B),
+            textAlign = TextAlign.Start,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 8.dp)
+                .clickable { onRefreshLocation() }
+                .testTag("refresh_weather_row"),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = "定位與天氣",
+                tint = AuroraMint,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "點擊更新位置與即時天氣預報",
+                style = MaterialTheme.typography.bodySmall,
+                color = AuroraMint
+            )
+        }
+    }
 }
 
 val ExpressiveShape = RoundedCornerShape(32.dp)
 
-fun getCardBackgroundColor(condition: String): Color {
+fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
+    if (!isNight) {
+        // Safe dark glassmorphic backgrounds for cards during the day to keep white text ultra-legible
+        return when {
+            condition.contains("雷") -> Color(0xFF1E1B4B).copy(alpha = 0.85f) // Dark indigo glass
+            condition.contains("雨") -> Color(0xFF0F172A).copy(alpha = 0.85f) // Deep dark slate glass
+            condition.contains("雪") -> Color(0xFF334155).copy(alpha = 0.82f) // Cool slate glass
+            condition.contains("霧") || condition.contains("陰") -> Color(0xFF3F3F46).copy(alpha = 0.82f) // Charcoal glass
+            condition.contains("多雲") -> Color(0xFF0284C7).copy(alpha = 0.85f) // High contrast blue glass
+            condition == "晴朗" -> Color(0xFF1E293B).copy(alpha = 0.85f) // High-end slate glass
+            else -> Color(0xFF3F3F46).copy(alpha = 0.85f) // Dark charcoal
+        }
+    }
+
     return when {
-        condition.contains("雷") -> Color(0xFF4F46E5).copy(alpha = 0.5f) // Stormy: Intense Indigo
-        condition.contains("雨") -> Color(0xFF2563EB).copy(alpha = 0.5f) // Rainy: Royal Blue
-        condition.contains("雪") -> Color(0xFFF1F5F9).copy(alpha = 0.3f) // Snowy: Soft Slate
-        condition.contains("霧") -> Color(0xFF94A3B8).copy(alpha = 0.4f) // Foggy: Slate
+        condition.contains("雷") -> Color(0xFF4F46E5).copy(alpha = 0.45f) // Stormy: Intense Indigo
+        condition.contains("雨") -> Color(0xFF2563EB).copy(alpha = 0.45f) // Rainy: Royal Blue
+        condition.contains("雪") -> Color(0xFFF1F5F9).copy(alpha = 0.25f) // Snowy: Soft Slate
+        condition.contains("霧") -> Color(0xFF94A3B8).copy(alpha = 0.35f) // Foggy: Slate
         condition.contains("陰") || condition.contains("多雲") -> Color(0xFF475569).copy(alpha = 0.45f) // Cloudy: Slate/Gray
-        else -> Color(0xFFF59E0B).copy(alpha = 0.4f) // Sunny: Amber/Gold
+        else -> Color(0xFFF59E0B).copy(alpha = 0.35f) // Sunny: Amber/Gold
     }
 }
 
 @Composable
-fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, onAuthorize: () -> Unit) {
+fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, isNight: Boolean, onAuthorize: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onAuthorize() },
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
-        shape = ExpressiveShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
+        shape = ExpressiveShape
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -425,6 +574,7 @@ fun WidgetGrid(
     weatherUnit: String,
     isCoughColorAlertEnabled: Boolean,
     displayedNewsCount: Int,
+    isNight: Boolean,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
@@ -440,12 +590,14 @@ fun WidgetGrid(
                 lastSyncTime = lastSyncTime,
                 syncDurationMs = sleepSyncDurationMs,
                 isCoughColorAlertEnabled = isCoughColorAlertEnabled,
+                isNight = isNight,
                 onClearSync = onClearSync,
                 onReSync = onSync
             )
         } else {
             SyncHealthReminderCard(
                 condition = weather.condition,
+                isNight = isNight,
                 onSync = onSync
             )
         }
@@ -453,12 +605,14 @@ fun WidgetGrid(
             weather = weather,
             condition = weather.condition,
             weatherUnit = weatherUnit,
+            isNight = isNight,
             onWeatherClick = onWeatherClick
         )
         NewsCard(
             news = news,
             condition = weather.condition,
             displayedNewsCount = displayedNewsCount,
+            isNight = isNight,
             onItemClick = onNewsClick
         )
     }
@@ -467,6 +621,7 @@ fun WidgetGrid(
 @Composable
 fun SyncHealthReminderCard(
     condition: String,
+    isNight: Boolean,
     onSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -476,9 +631,8 @@ fun SyncHealthReminderCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition).copy(alpha = 0.95f)),
-        shape = ExpressiveShape,
-        border = BorderStroke(1.5.dp, Color(0xFFF59E0B).copy(alpha = 0.4f))
+        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight).copy(alpha = 0.95f)),
+        shape = ExpressiveShape
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()
@@ -563,6 +717,7 @@ fun HealthCard(
     lastSyncTime: String,
     syncDurationMs: Long,
     isCoughColorAlertEnabled: Boolean,
+    isNight: Boolean,
     onClearSync: () -> Unit,
     onReSync: () -> Unit,
     modifier: Modifier = Modifier
@@ -572,14 +727,12 @@ fun HealthCard(
     val context = LocalContext.current
 
     val isAlert = isCoughColorAlertEnabled && sleep.coughCount > 0
-    val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition)
-    val cardBorder = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+    val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition, isNight)
 
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = cardBg),
-        shape = ExpressiveShape,
-        border = cardBorder
+        shape = ExpressiveShape
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(
@@ -757,6 +910,7 @@ fun WeatherCard(
     weather: WeatherInfo,
     condition: String,
     weatherUnit: String,
+    isNight: Boolean,
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -764,9 +918,8 @@ fun WeatherCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onWeatherClick() },
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
-        shape = ExpressiveShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
+        shape = ExpressiveShape
     ) {
         Row(
             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -806,12 +959,11 @@ fun WeatherCard(
 }
 
 @Composable
-fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, onItemClick: (NewsItem) -> Unit) {
+fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, isNight: Boolean, onItemClick: (NewsItem) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition)),
-        shape = ExpressiveShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        colors = CardDefaults.cardColors(containerColor = getCardBackgroundColor(condition, isNight)),
+        shape = ExpressiveShape
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Text("今日重點新聞 ($displayedNewsCount 則)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -844,41 +996,114 @@ fun NewsCard(news: List<NewsItem>, condition: String, displayedNewsCount: Int, o
 
 fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
     if (isNight) {
+        // Deep dark blue / space black background with distinct weather undertones
         return when {
-            condition.contains("雷") -> Brush.verticalGradient(listOf(Color(0xFF312E81), Color(0xFF1E1B4B), Color(0xFF0F172A)))
-            condition.contains("雨") -> Brush.verticalGradient(listOf(Color(0xFF1E3A8A), Color(0xFF172554), Color(0xFF0F172A)))
-            condition.contains("雪") -> Brush.verticalGradient(listOf(Color(0xFF334155), Color(0xFF1E293B), Color(0xFF0F172A)))
-            else -> Brush.verticalGradient(listOf(Color(0xFF1E1B4B), Color(0xFF0F172A)))
+            condition.contains("雷") -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF0B0F19), // Midnight black
+                    Color(0xFF1E1B4B), // Deep indigo
+                    Color(0xFF312E81), // Dark electric purple hint
+                    Color(0xFF02040A)  // Space black
+                )
+            )
+            condition.contains("雨") -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF0F172A), // Slate black
+                    Color(0xFF1E3A8A), // Rainy navy
+                    Color(0xFF172554), // Deep wet blue
+                    Color(0xFF030712)  // Void black
+                )
+            )
+            condition.contains("雪") -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF1E293B), // Cool slate
+                    Color(0xFF0F766E), // Arctic teal undertone
+                    Color(0xFF0F172A)  // Deep midnight
+                )
+            )
+            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF0F172A), // Midnight gray
+                    Color(0xFF334155), // Overcast slate gray
+                    Color(0xFF1E293B), // Dark space blue
+                    Color(0xFF02040A)  // Pure black
+                )
+            )
+            condition == "晴朗" -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF0B132B), // Clear dark night sky
+                    Color(0xFF1C2541), // Deep navy
+                    Color(0xFF1E1B4B), // Cosmic indigo glow
+                    Color(0xFF02040A)  // Space void
+                )
+            )
+            else -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFF0F172A), // Dark slate
+                    Color(0xFF1E1B4B), // Cosmic violet tint
+                    Color(0xFF030712)
+                )
+            )
         }
     }
 
+    // Morning / Daytime: Starts from brilliant whites but transitions into vibrant weather tones ("早上偏白色但對應天氣")
     return when {
         condition.contains("雷") -> Brush.verticalGradient(
-            listOf(Color(0xFF4F46E5), Color(0xFF312E81), Color(0xFF1E1B4B))
+            listOf(
+                Color(0xFFFFFFFF), // Bright morning top light
+                Color(0xFFE2E8F0), // Silvery storm-cloud white
+                Color(0xFFCBD5E1), // Gray-slate mid
+                Color(0xFF818CF8)  // Stormy bright indigo base
+            )
         )
         condition.contains("雨") -> Brush.verticalGradient(
-            listOf(Color(0xFF3B82F6), Color(0xFF1E40AF), Color(0xFF172554))
-        )
-        condition.contains("大雨") -> Brush.verticalGradient(
-            listOf(Color(0xFF1E40AF), Color(0xFF1E3A8A), Color(0xFF0F172A))
+            listOf(
+                Color(0xFFFFFFFF), // Crisp morning top
+                Color(0xFFEDF2F7), // Wet mist white
+                Color(0xFF93C5FD), // Soft rain blue
+                Color(0xFF3B82F6)  // Vibrant rainy day blue base
+            )
         )
         condition.contains("雪") -> Brush.verticalGradient(
-            listOf(Color(0xFFCBD5E1), Color(0xFF94A3B8), Color(0xFF475569))
+            listOf(
+                Color(0xFFFFFFFF), // Brilliant pure winter snow white
+                Color(0xFFF1F5F9), // Slate white
+                Color(0xFFCCFBF1), // Ice reflection light mint
+                Color(0xFF0D9488)  // Deep glacial teal base
+            )
         )
-        condition.contains("霧") -> Brush.verticalGradient(
-            listOf(Color(0xFF94A3B8), Color(0xFF64748B), Color(0xFF475569))
-        )
-        condition.contains("陰") -> Brush.verticalGradient(
-            listOf(Color(0xFF64748B), Color(0xFF475569), Color(0xFF334155))
+        condition.contains("霧") || condition.contains("陰") -> Brush.verticalGradient(
+            listOf(
+                Color(0xFFFFFFFF), // Mist shroud white
+                Color(0xFFE5E7EB), // Overcast cloud white
+                Color(0xFF94A3B8), // Silvery gray
+                Color(0xFF64748B)  // Slate gray base
+            )
         )
         condition.contains("多雲") -> Brush.verticalGradient(
-            listOf(Color(0xFF38BDF8), Color(0xFF0EA5E9), Color(0xFF0369A1))
+            listOf(
+                Color(0xFFFFFFFF), // High cloud white
+                Color(0xFFE0F2FE), // Soft sky mist blue
+                Color(0xFF7DD3FC), // Bright cumulus cloud light blue
+                Color(0xFF0EA5E9)  // Vibrant skytone azure base
+            )
         )
         condition == "晴朗" -> Brush.verticalGradient(
-            listOf(Color(0xFF0EA5E9), Color(0xFF0284C7), Color(0xFF0369A1))
+            listOf(
+                Color(0xFFFFFFFF), // Blindingly clean sunrise / morning light
+                Color(0xFFFFF7ED), // Warm solar gold dust
+                Color(0xFFBAE6FD), // Perfect light blue sky transition
+                Color(0xFF38BDF8)  // Vibrant clear day sky blue base
+            )
         )
         else -> Brush.verticalGradient(
-            listOf(Color(0xFFF59E0B), Color(0xFFD97706), Color(0xFF92400E))
+            listOf(
+                Color(0xFFFFFFFF), // Pure morning light
+                Color(0xFFFEF3C7), // Light amber sheen
+                Color(0xFFFDE68A), // Glowing warm golden aura
+                Color(0xFFF59E0B)  // Sunrise gold base
+            )
         )
     }
 }
@@ -1184,7 +1409,7 @@ fun SettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = AuroraDeepIndigo),
                                 modifier = Modifier.fillMaxWidth().height(48.dp)
                             ) {
-                                Text("登出", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("登出並重設為訪客", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Button(
@@ -1198,30 +1423,31 @@ fun SettingsScreen(
                                     Text("使用 Google 帳號登入", color = Color.DarkGray, fontWeight = FontWeight.Bold)
                                 }
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "或手動輸入暱稱",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = AuroraSlate,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = editUsername,
-                                onValueChange = { editUsername = it },
-                                placeholder = { Text("例如：小明") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("username_settings_input"),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    focusedBorderColor = AuroraMint,
-                                    unfocusedBorderColor = AuroraSlate
-                                ),
-                                singleLine = true
-                            )
                         }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "設定顯示暱稱",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = AuroraSlate,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editUsername,
+                            onValueChange = { editUsername = it },
+                            placeholder = { Text("例如：小明") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("username_settings_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = AuroraMint,
+                                unfocusedBorderColor = AuroraSlate
+                            ),
+                            singleLine = true
+                        )
                         
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                         SettingsRow(
@@ -1415,8 +1641,7 @@ fun SettingsSectionCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, Color(0xFF334155))
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()

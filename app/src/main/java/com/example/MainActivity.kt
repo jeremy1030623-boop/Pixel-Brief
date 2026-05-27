@@ -60,63 +60,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
-                var aiCoreStatus by remember { mutableStateOf<Boolean?>(null) }
-                val context = LocalContext.current
-
-                LaunchedEffect(Unit) {
-                    try {
-                        val pm = context.packageManager
-                        val aicorePackages = listOf("com.google.android.aicore", "com.google.android.apps.aicore")
-                        var supported = false
-                        
-                        for (pkg in aicorePackages) {
-                            try {
-                                val info = pm.getApplicationInfo(pkg, 0)
-                                if (info.enabled) {
-                                    supported = true
-                                    android.util.Log.d("AICoreCheck", "Supported package found: $pkg")
-                                    break
-                                }
-                            } catch (e: PackageManager.NameNotFoundException) {
-                                // Continue to next
-                            }
-                        }
-                        
-                        aiCoreStatus = supported
-                    } catch (e: Exception) {
-                        android.util.Log.e("AICoreCheck", "Error checking AICore", e)
-                        aiCoreStatus = false
-                    }
-                }
-
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    when (aiCoreStatus) {
-                        null -> {
-                            // Loading screen with background for consistency
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color(0xFF0F172A)), 
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CircularProgressIndicator(color = Color.White)
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text("正在獲取系統能力...", color = Color.White.copy(alpha = 0.7f))
-                                }
-                            }
-                        }
-                        true -> {
-                            MorningBriefingScreen()
-                        }
-                        false -> {
-                            // Not supported screen with a retry/bypass for developers
-                            AICoreNotSupportedScreen(onRetry = { aiCoreStatus = null })
-                        }
-                    }
+                    MorningBriefingScreen()
                 }
             }
         }
@@ -124,7 +72,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AICoreNotSupportedScreen(onRetry: () -> Unit) {
+fun AICoreNotSupportedScreen(onRetry: () -> Unit, onBypass: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -155,11 +103,16 @@ fun AICoreNotSupportedScreen(onRetry: () -> Unit) {
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
         Spacer(modifier = Modifier.height(32.dp))
-        Button(
-            onClick = onRetry,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f))
-        ) {
-            Text("重新檢測", color = Color.White)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f))
+            ) {
+                Text("重新檢測", color = Color.White)
+            }
+            androidx.compose.material3.TextButton(onClick = onBypass) {
+                Text("繼續使用 (模擬模式)", color = Color(0xFF38BDF8))
+            }
         }
     }
 }
