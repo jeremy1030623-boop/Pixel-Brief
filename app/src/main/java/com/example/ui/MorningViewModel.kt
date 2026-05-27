@@ -118,6 +118,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     val username = _userSettings.map { it?.username ?: "Jeremy" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Jeremy")
 
+    private val _goalSuggestion = MutableStateFlow<String>("")
+    val goalSuggestion = _goalSuggestion.asStateFlow()
+
     init {
         // fetchData is already setting up data on IO
         fetchData()
@@ -147,7 +150,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         
         viewModelScope.launch {
             try {
-                _userSettings.collect { settings ->
+                _userSettings.collectLatest { settings ->
                     if (settings != null && settings.isSleepSynced) {
                         _sleepInfo.value = SleepInfo(
                             hours = settings.sleepHours,
@@ -163,9 +166,34 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                         _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                         _healthInfo.value = HealthInfo()
                     }
+                    // Trigger suggestion update when sleep/health syncing changes
+                    updateGoalSuggestions()
                 }
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception collect _userSettings", e)
+            }
+        }
+    }
+    
+    private suspend fun updateGoalSuggestions() {
+        val sleep = _sleepInfo.value
+        val health = _healthInfo.value
+        val weather = _weatherInfo.value
+        
+        val prompt = "你是專業生活規劃簡報大師。請根據以下數據：天氣 ${weather.condition} (${weather.currentTemp}°C)，昨晚睡眠 ${sleep.hours} 小時，今日步數 ${health.steps}。請給出一段針對今日生活目標的個人化建議，包含戶外活動調整建議與休息規劃，字數約 60-80 字。語氣溫馨、充滿正能量、務實，不要條列式，以簡報大摘要形式呈現。"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        
+        _goalSuggestion.value = try {
+            val context = getApplication<Application>().applicationContext
+            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
+            responseText.trim()
+        } catch (e: Throwable) {
+             if (sleep.hours < 6f) {
+                "昨晚睡眠較少，今日請務必 prioritize 休息，減少高強度活動，並適時補充水分與小憩。"
+            } else if (weather.condition.contains("晴") && health.steps < 5000) {
+                "今天天氣絕佳，且最近活動量較少，強烈建議您安排 20 分鐘戶外漫步，吸收陽光恢復活力。"
+            } else {
+                "今天持續維持均衡作息，保持心情愉悅即可，隨時關注身體狀態，適量休息。"
             }
         }
     }
@@ -214,7 +242,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun fetchHealthTrend(data: HealthConnectHelper.HealthData): String {
-        val prompt = "你是專業的健康分析助手。請分析以下昨晚的健康數據，並提供一句簡短且具體（20-30字以內）的綜合趨勢報告，鼓勵用戶或給予提醒。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}），步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。請直接返回報告內容，不要有標題或引號。"
+        val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請分析以下昨晚到今天的健康數據，並提供一段字數約 80-120 字的『深度健康生活綜合指導文字簡報』，包含具體的身體狀態評估、今日飲食與運動之科學建議，以及晨間開機的精神小叮嚀。請務必溫馨且充滿細節，直接返回簡報文字，不要有任何標題或外層引號。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}，打鼾 ${data.snoringMinutes} 分鐘，咳嗽 ${data.coughCount} 次），今日步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。"
         // Prioritize gemini-nano for on-device AI Core experience
         val modelName = "gemini-nano" 
         
@@ -225,11 +253,11 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         } catch (e: Throwable) {
             // Fallback trend report
             if (data.sleepHours > 7 && data.dailySteps > 8000) {
-                "您今天的活動量不錯，睡眠品質也有所提升，請繼續保持！"
+                "【活力滿分】您昨晚的睡眠時數長達 ${data.sleepHours} 小時，深層睡眠品質卓越；搭配今日高達 ${data.dailySteps} 步的活躍步伐，您的心肺功能與代謝正處於極佳狀態。建議清晨多攝取高蛋白與富含維生素的膳食，維持一整天高能量釋放。今天非常適合進行戶外快走，讓充足陽光調節您的生理時鐘！"
             } else if (data.sleepHours < 6) {
-                "昨晚睡眠稍顯不足，建議今天早點休息，並多補充水分。"
+                "【溫馨守護】您昨晚的睡眠時數僅 ${data.sleepHours} 小時，身體開機稍顯疲憊，且心律偏高。今日建議在飲食中補充足夠的純水與複合性碳水化合物，保持體液平衡與專注。今天請避免挑戰極限強度的訓練，改為 15 分鐘的溫和拉伸與深呼吸，晚上提早入睡以極速修護元氣。"
             } else {
-                "今日各項指標穩定，是充滿活力的一天。"
+                "【元氣平衡】今日您的各項健康指標整體表現平穩。睡眠時數達 ${data.sleepHours} 小時，心率穩定在 ${data.avgHeartRate} bpm。建議中午進行 10 分鐘的靜坐冥想或深呼吸，並在工作時每隔一小時起身活動，能大幅改善下半身循環。保持平和心境，迎接充實、健康而自信的一天！"
             }
         }
     }
@@ -410,20 +438,20 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 "${index + 1}. [標題] ${item.title} (來源連結: ${item.link})"
             }.joinToString("\n")
             if (newsMode == "international") {
-                "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+                "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請詳細描寫脈絡，提供其對個人生活、科學保健或全球動態的具體啟示，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
             } else {
-                "以下是今天真實採集到的 [$locationText] 地方與在地 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則與 [$locationText] 地方生活、交通、發展或周邊生活息息相關的在地重要話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+                "以下是今天真實採集到的 [$locationText] 地方與在地 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則與 [$locationText] 地方生活、交通、發展或周邊生活息息相關的在地重要話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請結合在地人的日常作息、防護、通勤或週末出行，深入拓展報導細節。並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
             }
         } else {
             if (newsMode == "international") {
-                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻的國際政經、世界脈動與科技健康新聞話題，`url` 請留空）"
+                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻充實、段落長度約 120 到 200 字的國際政經、世界脈動與科技健康新聞話題文字簡報，包含實用的行動指導建議，`url` 請留空）"
             } else {
-                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則與 [$locationText] 在地生活、地方交通與生活日常息息相關、溫馨且正能量的焦點新聞話題，`url` 請留空）"
+                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則與 [$locationText] 在地生活、地方交通與生活日常息息相關、溫馨正能量、段落長度約 120 到 200 字的焦點新聞話題文字簡報，給出極具生活實用乾貨與健康小訣竅，`url` 請留空）"
             }
         }
 
-        val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。\n請務必讓其中一則簡報重點與今日天氣及戶外活動建議呼應。\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切精簡的早安摘要...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"
-        val modelName = "gemini-3.5-flash"
+        val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。\n請務必讓其中一則簡報重點與今日天氣、穿著、紫外線防護或戶外活動建議深度呼應並給予極其溫馨的貼心指引。\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切深入的早安大摘要文字，字數保持120-200字，乾貨滿滿...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
         
         try {
             val context = getApplication<Application>().applicationContext
@@ -462,36 +490,36 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         return if (newsMode == "international") {
             listOf(
                 NewsItem(
-                    title = "國際財經：全球半導體供應鏈重組趨勢",
-                    summary = "隨著美歐日多國推出半導體補貼政策，全球晶片製造商正加速於多地佈局新廠。專家指出，未來雙供應鏈與區域化生產將成為科技業新常態，推動在地技術升級與跨國人才流動。",
+                    title = "國際財經專題：全球半導體供應鏈重組與晶片振興白皮書",
+                    summary = "隨著美、歐、日等多國積極推出巨額半導體補貼與本國製造政策，全球晶片供應鏈正迎來數十年來最劇烈的板塊重組。專家指出，晶片製造商正加速於分散區域佈局新廠。這預示著未來『雙軌供應鏈』與區域性協同生產將成為全球科技產業的核心新常態。長期來看，這不仅能有效預防地緣或災害突發所導致的供應中斷，更將顯著推動各區域的在地基礎設施與技術研發升級，對於高級工程師、科技從業者來說，跨國人才流動與跨洲技術協作將成為必須具備的全新職涯眼界。",
                     url = "https://news.google.com"
                 ),
                 NewsItem(
-                    title = "氣候變遷與綠色轉型：永續能源新突破",
-                    summary = "國際能源總署（IEA）發表最新報告，預測未來三年全球再生能源發電量將達到新高。太陽能與風能技術的成本持續下降，使其成為多數國家新增電力裝機的首選，力求落實淨零碳排承諾。",
+                    title = "綠色能源突破：低成本光電及風能技術引領全球淨零碳排",
+                    summary = "國際能源總署（IEA）在今晨發布的最新年度能源瞻望白皮書中指出，未來三年間全球可再生能源累計發電量將突破歷史新高，徹底改變傳統基載電力結構。得益於新一代鈣鈦礦疊層太陽能電池以及深海浮動式風力發電技術的突破，綠色電力獲取成本在過去18個月內崩跌了接近百分之二十五，已成為絕大多數國家在新增電力裝機容量時，兼顧商業運維與政策環保的首要選擇。各國政府正加速建置智慧區域電網與分佈式儲能系統，力求落實淨零碳排承諾，而一般大眾家戶也將受益於逐漸降低的綠色電費負擔，開啟低碳生活新篇章。",
                     url = "https://news.google.com"
                 ),
                 NewsItem(
-                    title = "健康科技專欄：高效睡眠與現代人腦力保健",
-                    summary = "醫學研究顯示，維持 7.5 小時的規律作息能有效修復神經。早晨接受 10 分鐘溫和日光，有助重置褪黑激素規律，大幅提升全天專注力。今天預估天氣晴朗，出門前不妨進行輕度伸展！",
+                    title = "身心健康科技：微日光暴露法與現代白領腦力保健科學觀點",
+                    summary = "最新發布於頂尖神經醫學期刊的實證研究確認，精確管理白天的日光暴露與晚上的黑暗節律，是維持大腦海馬迴活動與情緒穩定的核心。研究指出，人體在清晨醒來後的 30 分鐘內，若能接受 10 至 15 分鐘、約 10,000 照度的自然光與微風抚慰，便能精巧刺激視交叉上核，重置神經遞質與褪黑激素的分泌節律。這項開機程序不仅能在白天顯著提升認知專注度、抑制倦怠感，更能深度改善夜晚的睡眠深度。考慮到今天部分地區天氣舒適溫和，誠摯建議您在出門前，撥空步行至通風良好的窗台或公園，進行深呼吸與暖身拉伸，迎接一整天精準、平穩且敏捷的高效活力作息！",
                     url = "https://news.google.com"
                 )
             )
         } else {
             listOf(
                 NewsItem(
-                    title = "在地生活指南：大眾運輸與通勤優化新進展",
-                    summary = "市府近期宣布將優化多條尖峰時段的捷運與公車接駁。除規劃新站點外，更導入智慧調度系統，預估能縮短 10-15% 的通勤等待時間。建議市民外出通勤時可優先選擇環保低碳的綠色大眾運輸。",
+                    title = "在地生活指南：大眾智慧交通網與綠色通勤接駁系統升級優化",
+                    summary = "市府交通局與捷運公司今日宣布，為了落實低碳智慧城市願景，將全面優化多條尖峰時段的捷運接駁專線與幹線公車路網。本輪升級除了大量增設微型站點與普及無障礙共享載具外，更引進了尖端的 AI 智慧人流分析與動態調度系統。該系統可實時監測人流湧入速度並在 3 分鐘內動態派遣支援班次，初步模擬指出此舉能成功降低通勤族在月台與站牌的等待時間高達 15%。強烈建議市民朋友們外出工作或上學時，下載並利用最新版的在地即時公車 App 規劃路線，享受綠色低碳且無縫轉乘的舒心出行體驗。",
                     url = "https://news.google.com"
                 ),
                 NewsItem(
-                    title = "科技新創動態：台灣新創 AI 應用拓展全球市場",
-                    summary = "在地數家科技新創團隊發表了應用於生活管理與健康追蹤的 AI 助理。憑藉著高度隱私防護與親切的語意理解技術，在亞太及美洲市場獲得高度關注，展現在地數位科技的強勁硬實力。",
+                    title = "數位新創動態：台灣新創團隊 AI 隱私助理驚豔國際大會",
+                    summary = "在昨日圓滿閉幕的亞太數位科技年會上，數家來自台灣的潛力新創團隊憑藉其獨特的端側 AI 行為分析與隱私保護防禦技術，大放異彩並斬獲多項創新大獎。這款專為行動設備量身訂製的智慧助理，採用了不需上傳雲端、完全在手機本機運算（On-device AI）的微型語言模型演算法，提供毫秒級的親切語意理解與日程優化。最難能可貴的是它在守護健康日誌、家庭位置等隱密資料的同時，展現出高水準的上下文聯想與情感互動能力。此項突破不僅在亞太與北美商務市場贏得高度熱烈的融資關注，更向世界展現了台灣在端側 AI 應用品質上的無比實力。",
                     url = "https://news.google.com"
                 ),
                 NewsItem(
-                    title = "早晨元氣秘訣：今日戶外活動與空氣品質提醒",
-                    summary = "根據氣象與環境觀測，今天整體空氣品質良好，氣溫適宜。極其適合在上午前往公園或綠地進行 15 分鐘的清晨漫步或伸展操，放鬆身心。迎著溫暖晨光，開啟美好、活力充實的一天！",
+                    title = "早晨開機元氣指引：今日晨光伸展建議與空氣品質環境提醒",
+                    summary = "根據氣象局與環境保護監測網的清晨更新數據，今日各區空氣品質指數（AQI）普遍維持在極其優良的綠色安全區間，整體氣候適度溫和。這樣的絕佳氣候環境，無疑提供了一個享受大自然的完美起點。醫學專家建議，在如此舒適的清晨前往鄰近公園、草地、或天台進行 15 分鐘的清晨漫步，並在過程中交替進行配合深呼吸的肩頸放鬆與下肢伸展踏步，能極佳地加速全身血液灌流大腦、重置心肺動能。讓我們迎著這道溫煦的朝陽，徹底洗去昨夜累積的疲憊，開啟極其充沛、心滿意足的璀璨一整天！",
                     url = "https://news.google.com"
                 )
             )

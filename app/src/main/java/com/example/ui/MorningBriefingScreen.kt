@@ -47,6 +47,12 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
 
+sealed class ScreenState {
+    object Home : ScreenState()
+    object Settings : ScreenState()
+    data class NewsDetail(val item: NewsItem) : ScreenState()
+}
+
 @Composable
 fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val weather by viewModel.weatherInfo.collectAsState()
@@ -57,6 +63,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val events by viewModel.nextEvents.collectAsState()
     val news by viewModel.newsDetail.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
+    val goalSuggestion by viewModel.goalSuggestion.collectAsState()
 
     val isSleepSynced = userSettings?.isSleepSynced ?: false
     val lastSyncTime = userSettings?.lastSyncTime ?: ""
@@ -129,40 +136,41 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             .fillMaxSize()
             .background(brush = backgroundBrush)
     ) {
-        val screenState = when {
-            selectedNewsItem != null -> "news_detail"
-            isSettingsOpen -> "settings"
-            else -> "home"
+        val currentNewsItem = selectedNewsItem
+        val screenState = remember(currentNewsItem, isSettingsOpen) {
+            when {
+                currentNewsItem != null -> ScreenState.NewsDetail(currentNewsItem)
+                isSettingsOpen -> ScreenState.Settings
+                else -> ScreenState.Home
+            }
         }
 
         // Handle back navigation for sub-screens
-        BackHandler(enabled = selectedNewsItem != null || isSettingsOpen) {
+        BackHandler(enabled = currentNewsItem != null || isSettingsOpen) {
             when {
-                selectedNewsItem != null -> selectedNewsItem = null
+                currentNewsItem != null -> selectedNewsItem = null
                 isSettingsOpen -> isSettingsOpen = false
             }
         }
 
-        AnimatedContent(
+        Crossfade(
             targetState = screenState,
             label = "ScreenContent"
         ) { state ->
             when (state) {
-                "news_detail" -> {
-                    selectedNewsItem?.let { item ->
-                        NewsDetailScreen(item, isNight) {
-                            selectedNewsItem = null
-                        }
+                is ScreenState.NewsDetail -> {
+                    NewsDetailScreen(state.item, isNight) {
+                        selectedNewsItem = null
                     }
                 }
-                "settings" -> {
+                is ScreenState.Settings -> {
                     SettingsScreen(
                         settings = userSettings ?: UserSettings(),
                         onBack = { isSettingsOpen = false },
                         onSave = { updated -> viewModel.updateUserSettings(updated) }
                     )
                 }
-                "home" -> {
+                is ScreenState.Home -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -170,7 +178,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             .padding(horizontal = 24.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Spacer(modifier = Modifier.height(48.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        GeminiNanoStatusCard(modifier = Modifier.padding(bottom = 16.dp))
                         
                         AnimatedVisibility(
                             visible = visible,
@@ -186,6 +196,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 events = events,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isNight = isNight,
+                                goalSuggestion = goalSuggestion,
                                 onSettingsClick = { isSettingsOpen = true },
                                 onProfileChange = { newName, newEmoji, newGradientIndex ->
                                     val current = userSettings ?: UserSettings()
@@ -384,6 +395,7 @@ fun GreetingSection(
     events: List<com.example.data.CalendarEvent>,
     weatherUnit: String,
     isNight: Boolean,
+    goalSuggestion: String,
     onSettingsClick: () -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit,
     onRefreshLocation: () -> Unit
@@ -401,7 +413,7 @@ fun GreetingSection(
     
     val nextEvent = events.firstOrNull()
     val eventText = if (nextEvent != null) {
-        "\n有什麼是要做:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
+        "\n今天的活動:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
     } else {
         ""
     }
@@ -621,7 +633,7 @@ fun GreetingSection(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        TimeGreetingText(time, eventText, weather, weatherUnit, onRefreshLocation, isNight)
+        TimeGreetingText(time, eventText, weather, weatherUnit, onRefreshLocation, isNight, goalSuggestion)
     }
 }
 
@@ -632,7 +644,8 @@ fun TimeGreetingText(
     weather: WeatherInfo,
     weatherUnit: String,
     onRefreshLocation: () -> Unit,
-    isNight: Boolean
+    isNight: Boolean,
+    goalSuggestion: String
 ) {
     Column {
         Text(
@@ -642,6 +655,17 @@ fun TimeGreetingText(
             textAlign = TextAlign.Start,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
         )
+        if (goalSuggestion.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "💡 $goalSuggestion",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isNight) Color.White.copy(alpha = 0.85f) else Color(0xFF334155),
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Start,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            )
+        }
     }
 }
 
@@ -689,30 +713,44 @@ fun GlassmorphicCard(
             .fillMaxWidth()
             .clip(ExpressiveShape)
     ) {
-        // Blurred backing glow to act as a glass refract layer
+        // High-end frosted glass refraction simulation using smooth multi-gradient backing.
+        // This is 100% safe from RenderThread crashes on virtualized GPUs while providing rich depth & non-solid translucency.
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .blur(30.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
                 .background(
-                    Brush.radialGradient(
+                    Brush.linearGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.12f),
+                            Color.White.copy(alpha = 0.08f),
+                            Color.White.copy(alpha = 0.02f),
                             Color.Transparent
-                        ),
-                        radius = 450f
+                        )
                     )
                 )
         )
-        // Translucent background card with a modern, translucent touch
+        // Translucent background card with a modern, non-solid light-leaking gradient fill
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = containerColor.copy(alpha = 0.42f)
+                containerColor = Color.Transparent
             ),
             shape = ExpressiveShape
         ) {
-            Column(content = content)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                containerColor.copy(alpha = 0.55f),
+                                containerColor.copy(alpha = 0.35f),
+                                containerColor.copy(alpha = 0.45f)
+                            )
+                        )
+                    )
+            ) {
+                Column(content = content)
+            }
         }
     }
 }
@@ -1246,14 +1284,24 @@ fun NewsCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onItemClick(item) }
-                            .padding(vertical = 8.dp)
+                            .padding(vertical = 12.dp)
                     ) {
-                        Text(item.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(item.summary, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), maxLines = 2)
+                        Text(
+                            text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                     if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }

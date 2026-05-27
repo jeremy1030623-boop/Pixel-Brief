@@ -65,7 +65,6 @@ secrets {
   defaultPropertiesFileName = ".env.example"
 }
 
-// Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
@@ -105,6 +104,7 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
   implementation(libs.google.generativeai)
   implementation(libs.androidx.health.connect)
   testImplementation(libs.androidx.compose.ui.test.junit4)
