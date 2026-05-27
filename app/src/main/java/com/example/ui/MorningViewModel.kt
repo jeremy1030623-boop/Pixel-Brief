@@ -181,7 +181,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         val weather = _weatherInfo.value
         
         val prompt = "你是專業生活規劃簡報大師。請根據以下數據：天氣 ${weather.condition} (${weather.currentTemp}°C)，昨晚睡眠 ${sleep.hours} 小時，今日步數 ${health.steps}。請給出一段針對今日生活目標的個人化建議，包含戶外活動調整建議與休息規劃，字數約 60-80 字。語氣溫馨、充滿正能量、務實，不要條列式，以簡報大摘要形式呈現。"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash-latest"
         
         _goalSuggestion.value = try {
             val context = getApplication<Application>().applicationContext

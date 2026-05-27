@@ -13,7 +13,7 @@ object GoogleGenAiClient {
      * the Gemini Nano model via AICore on supported devices.
      * Here we utilize the 1.5 Flash model which offers similar latency profiles.
      */
-    suspend fun generateContent(context: Context, prompt: String, modelName: String = "gemini-1.5-flash"): String {
+    suspend fun generateContent(context: Context, prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
         // Fallback to server-side for the applet demo, 
         // with the restriction check performed at the Activity level.
         return generateContentServerSide(prompt, modelName)
@@ -22,7 +22,7 @@ object GoogleGenAiClient {
     /**
      * Instantiates the official Google GenAI GenerativeModel object using the registered keys.
      */
-    fun getModel(modelName: String = "gemini-1.5-flash"): GenerativeModel {
+    fun getModel(modelName: String = "gemini-1.5-flash-latest"): GenerativeModel {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val config = generationConfig {
             temperature = 0.7f
@@ -37,12 +37,12 @@ object GoogleGenAiClient {
     /**
      * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContentServerSide(prompt: String, modelName: String = "gemini-1.5-flash"): String {
+    suspend fun generateContentServerSide(prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return "未設定 valid API 金鑰。"
         }
-        val actualModel = if (modelName == "gemini-nano") "gemini-1.5-flash" else modelName
+        val actualModel = if (modelName == "gemini-nano") "gemini-1.5-flash-latest" else modelName
         return try {
             val model = getModel(actualModel)
             val response = model.generateContent(prompt)
@@ -54,7 +54,7 @@ object GoogleGenAiClient {
     }
 
     // Deprecated or compatibility wrapper
-    suspend fun generateContent(prompt: String, modelName: String = "gemini-1.5-flash"): String {
+    suspend fun generateContent(prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
         return generateContentServerSide(prompt, modelName)
     }
 }
