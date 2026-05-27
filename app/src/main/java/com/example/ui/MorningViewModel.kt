@@ -121,6 +121,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _goalSuggestion = MutableStateFlow<String>("")
     val goalSuggestion = _goalSuggestion.asStateFlow()
 
+    private val _funFact = MutableStateFlow<String>("你知道嗎？每天適量喝水，能顯著提升專注力與新陳代謝。")
+    val funFact = _funFact.asStateFlow()
+
     init {
         // fetchData is already setting up data on IO
         fetchData()
@@ -175,13 +178,22 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     
+    private suspend fun updateFunFact() {
+        _funFact.value = try {
+            val context = getApplication<Application>().applicationContext
+            com.example.api.GoogleGenAiClient.generateContent(context, "請提供一個有趣的冷知識，字數 50 字以內，繁體中文。")
+        } catch (e: Throwable) {
+            "你知道嗎？每天適量喝水，能顯著提升專注力與新陳代謝。"
+        }
+    }
+
     private suspend fun updateGoalSuggestions() {
         val sleep = _sleepInfo.value
         val health = _healthInfo.value
         val weather = _weatherInfo.value
         
         val prompt = "你是專業生活規劃簡報大師。請根據以下數據：天氣 ${weather.condition} (${weather.currentTemp}°C)，昨晚睡眠 ${sleep.hours} 小時，今日步數 ${health.steps}。請給出一段針對今日生活目標的個人化建議，包含戶外活動調整建議與休息規劃，字數約 60-80 字。語氣溫馨、充滿正能量、務實，不要條列式，以簡報大摘要形式呈現。"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash-latest"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "Gemini Flash Latest"
         
         _goalSuggestion.value = try {
             val context = getApplication<Application>().applicationContext
@@ -362,6 +374,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Error inside fetchData", e)
             }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            updateFunFact()
         }
     }
 

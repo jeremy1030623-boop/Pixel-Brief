@@ -233,7 +233,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         ) {
                             WidgetGrid(
                                 sleepInfo = sleepInfo,
-                                healthInfo = healthInfo,
                                 weather = weather,
                                 events = events,
                                 news = news,
@@ -341,6 +340,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
         }
     }
 }
+
 
 val AvatarGradients = listOf(
     listOf(Color(0xFF00A896), Color(0xFFB388FF)), // Oceanic Aurora
@@ -610,7 +610,7 @@ fun GreetingSection(
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "$greeting $username",
+                        text = greeting.replace(",", "") + ", $username!",
                         style = MaterialTheme.typography.headlineSmall,
                         color = if (isNight) Color.White else Color(0xFF1E293B),
                         fontWeight = FontWeight.Bold
@@ -675,13 +675,13 @@ fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
     if (!isNight) {
         // Safe dark glassmorphic backgrounds for cards during the day to keep white text ultra-legible
         return when {
-            condition.contains("雷") -> Color(0xFF1E1B4B).copy(alpha = 0.85f) // Dark indigo glass
-            condition.contains("雨") -> Color(0xFF0F172A).copy(alpha = 0.85f) // Deep dark slate glass
-            condition.contains("雪") -> Color(0xFF334155).copy(alpha = 0.82f) // Cool slate glass
-            condition.contains("霧") || condition.contains("陰") -> Color(0xFF3F3F46).copy(alpha = 0.82f) // Charcoal glass
-            condition.contains("多雲") -> Color(0xFF0284C7).copy(alpha = 0.85f) // High contrast blue glass
-            condition == "晴朗" -> Color(0xFF1E293B).copy(alpha = 0.85f) // High-end slate glass
-            else -> Color(0xFF3F3F46).copy(alpha = 0.85f) // Dark charcoal
+            condition.contains("雷") -> Color(0xFF78350F).copy(alpha = 0.85f) // Warm dark brown-amber
+            condition.contains("雨") -> Color(0xFF451A03).copy(alpha = 0.85f) // Warm deep rust
+            condition.contains("雪") -> Color(0xFF713F12).copy(alpha = 0.82f) // Warm gold-slate
+            condition.contains("霧") || condition.contains("陰") -> Color(0xFF5D4037).copy(alpha = 0.82f) // Warm brown
+            condition.contains("多雲") -> Color(0xFFB45309).copy(alpha = 0.85f) // Warm amber
+            condition == "晴朗" -> Color(0xFFD97706).copy(alpha = 0.85f) // Sunny gold
+            else -> Color(0xFF78350F).copy(alpha = 0.85f) // Dark amber
         }
     }
 
@@ -816,7 +816,6 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
 @Composable
 fun WidgetGrid(
     sleepInfo: SleepInfo,
-    healthInfo: HealthInfo,
     weather: WeatherInfo,
     events: List<com.example.data.CalendarEvent>,
     news: List<NewsItem>,
@@ -837,15 +836,11 @@ fun WidgetGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (isSleepSynced) {
-            HealthCard(
+            SleepCard(
                 sleep = sleepInfo,
-                health = healthInfo,
                 condition = weather.condition,
                 lastSyncTime = lastSyncTime,
-                syncDurationMs = sleepSyncDurationMs,
-                isCoughColorAlertEnabled = isCoughColorAlertEnabled,
                 isNight = isNight,
-                onClearSync = onClearSync,
                 onReSync = onSync
             )
         } else {
@@ -965,15 +960,11 @@ fun SyncHealthReminderCard(
 }
 
 @Composable
-fun HealthCard(
+fun SleepCard(
     sleep: SleepInfo,
-    health: HealthInfo,
     condition: String,
     lastSyncTime: String,
-    syncDurationMs: Long,
-    isCoughColorAlertEnabled: Boolean,
     isNight: Boolean,
-    onClearSync: () -> Unit,
     onReSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -981,8 +972,7 @@ fun HealthCard(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val isAlert = isCoughColorAlertEnabled && sleep.coughCount > 0
-    val cardBg = if (isAlert) Color(0xFF6B2D1D) else getCardBackgroundColor(condition, isNight)
+    val cardBg = getCardBackgroundColor(condition, isNight)
 
     GlassmorphicCard(
         modifier = modifier,
@@ -1003,7 +993,7 @@ fun HealthCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Default.HealthAndSafety,
+                            Icons.Default.Bedtime,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
@@ -1012,7 +1002,7 @@ fun HealthCard(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            "今日健康報告",
+                            "今日睡眠品質",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -1033,11 +1023,11 @@ fun HealthCard(
                                 coroutineScope.launch {
                                     onReSync()
                                     isSyncing = false
-                                    android.widget.Toast.makeText(context, "健康資料已更新！", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, "睡眠資料已更新！", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
-                        modifier = Modifier.size(36.dp).testTag("resync_health_button")
+                        modifier = Modifier.size(36.dp).testTag("resync_sleep_button")
                     ) {
                         if (isSyncing) {
                             CircularProgressIndicator(
@@ -1058,90 +1048,23 @@ fun HealthCard(
             }
             
             Spacer(modifier = Modifier.height(20.dp))
-
-            // Health Trends Report powered by Gemini
-            if (health.trendReport.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.1f))
-                        .padding(16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color(0xFFFDE047),
-                            modifier = Modifier.size(18.dp).padding(top = 2.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = health.trendReport,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White,
-                            lineHeight = 22.sp
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-            }
             
-            // Grid of health metrics
-            Row(modifier = Modifier.fillMaxWidth()) {
-                HealthMetricItem(
-                    modifier = Modifier.weight(1f),
+            // Grid of sleep metrics
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                SleepMetricItem(
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     icon = Icons.Default.Bedtime,
-                    label = "睡眠",
-                    value = "${sleep.hours}h",
+                    label = "睡眠時數",
+                    value = "${sleep.hours.toInt()}h",
                     tint = Color(0xFF818CF8)
                 )
-                HealthMetricItem(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.DirectionsWalk,
-                    label = "步數",
-                    value = "${health.steps}",
-                    tint = Color(0xFF4ADE80)
-                )
-                HealthMetricItem(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.Favorite,
-                    label = "心率",
-                    value = "${health.heartRate}",
-                    tint = Color(0xFFF87171)
-                )
-            }
-            
-            if (sleep.snoringMinutes > 0 || sleep.coughCount > 0) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White.copy(alpha = 0.6f))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("打鼾: ${sleep.snoringMinutes}m", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Sick, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (isAlert) Color(0xFFEF4444) else Color.White.copy(alpha = 0.6f))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            "咳嗽: ${sleep.coughCount}次",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isAlert) Color(0xFFFCA5A5) else Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-                }
             }
         }
     }
 }
 
 @Composable
-fun HealthMetricItem(
+fun SleepMetricItem(
     modifier: Modifier = Modifier,
     icon: ImageVector,
     label: String,
@@ -1366,58 +1289,58 @@ fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
     return when {
         condition.contains("雷") -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Bright morning top light
-                Color(0xFFE2E8F0), // Silvery storm-cloud white
-                Color(0xFFCBD5E1), // Gray-slate mid
-                Color(0xFF818CF8)  // Stormy bright indigo base
+                Color(0xFFFFFFFF),                
+                Color(0xFFFEF9C3), // Light cream
+                Color(0xFFFDE68A), // Light amber
+                Color(0xFFB45309)  // Deep amber
             )
         )
         condition.contains("雨") -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Crisp morning top
-                Color(0xFFEDF2F7), // Wet mist white
-                Color(0xFF93C5FD), // Soft rain blue
-                Color(0xFF3B82F6)  // Vibrant rainy day blue base
+                Color(0xFFFFFFFF),                
+                Color(0xFFFEF3C7), // Light amber
+                Color(0xFFFCD34D), // Sunny yellow-amber
+                Color(0xFFD97706)  // Rust-amber
             )
         )
         condition.contains("雪") -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Brilliant pure winter snow white
-                Color(0xFFF1F5F9), // Slate white
-                Color(0xFFCCFBF1), // Ice reflection light mint
-                Color(0xFF0D9488)  // Deep glacial teal base
+                Color(0xFFFFFFFF),
+                Color(0xFFFFFBEB), // Soft cream
+                Color(0xFFFDE68A), // Light gold
+                Color(0xFFD97706)  // Amber base
             )
         )
         condition.contains("霧") || condition.contains("陰") -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Mist shroud white
-                Color(0xFFE5E7EB), // Overcast cloud white
-                Color(0xFF94A3B8), // Silvery gray
-                Color(0xFF64748B)  // Slate gray base
+                Color(0xFFFFFFFF),
+                Color(0xFFFEFCE8), // Creamy
+                Color(0xFFFDE68A), // Golden
+                Color(0xFFB45309)  // Warm brown amber
             )
         )
         condition.contains("多雲") -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // High cloud white
-                Color(0xFFE0F2FE), // Soft sky mist blue
-                Color(0xFF7DD3FC), // Bright cumulus cloud light blue
-                Color(0xFF0EA5E9)  // Vibrant skytone azure base
+                Color(0xFFFFFFFF),
+                Color(0xFFFFFDF2), // Subtle warm hue
+                Color(0xFFFDE68A), // Sunny light
+                Color(0xFFD97706)  // Warm golden amber
             )
         )
         condition == "晴朗" -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Blindingly clean sunrise / morning light
-                Color(0xFFFFF7ED), // Warm solar gold dust
-                Color(0xFFBAE6FD), // Perfect light blue sky transition
-                Color(0xFF38BDF8)  // Vibrant clear day sky blue base
+                Color(0xFFFFFFFF),
+                Color(0xFFFEF3C7),
+                Color(0xFFFCD34D),
+                Color(0xFFD97706)
             )
         )
         else -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF), // Pure morning light
-                Color(0xFFFEF3C7), // Light amber sheen
-                Color(0xFFFDE68A), // Glowing warm golden aura
-                Color(0xFFF59E0B)  // Sunrise gold base
+                Color(0xFFFFFFFF),
+                Color(0xFFFEF3C7),
+                Color(0xFFFDE68A),
+                Color(0xFFF59E0B)
             )
         )
     }

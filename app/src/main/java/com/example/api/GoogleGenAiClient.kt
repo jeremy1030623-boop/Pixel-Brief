@@ -9,26 +9,23 @@ import com.example.BuildConfig
 object GoogleGenAiClient {
 
     /**
-     * Attempts to generate content. In a real environment, this would call 
-     * the Gemini Nano model via AICore on supported devices.
-     * Here we utilize the 1.5 Flash model which offers similar latency profiles.
+     * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContent(context: Context, prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
-        // Fallback to server-side for the applet demo, 
-        // with the restriction check performed at the Activity level.
+    suspend fun generateContent(context: Context, prompt: String, modelName: String = "Gemini Flash Latest"): String {
         return generateContentServerSide(prompt, modelName)
     }
 
     /**
      * Instantiates the official Google GenAI GenerativeModel object using the registered keys.
      */
-    fun getModel(modelName: String = "gemini-1.5-flash-latest"): GenerativeModel {
+    fun getModel(modelName: String = "Gemini Flash Latest"): GenerativeModel {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val config = generationConfig {
             temperature = 0.7f
         }
+        val actualModelName = if (modelName == "Gemini Flash Latest") "gemini-1.5-flash" else modelName
         return GenerativeModel(
-            modelName = modelName,
+            modelName = actualModelName,
             apiKey = apiKey,
             generationConfig = config
         )
@@ -37,12 +34,12 @@ object GoogleGenAiClient {
     /**
      * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContentServerSide(prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
+    suspend fun generateContentServerSide(prompt: String, modelName: String = "Gemini Flash Latest"): String {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             return "未設定 valid API 金鑰。"
         }
-        val actualModel = if (modelName == "gemini-nano") "gemini-1.5-flash-latest" else modelName
+        val actualModel = if (modelName == "gemini-nano") "Gemini Flash Latest" else modelName
         return try {
             val model = getModel(actualModel)
             val response = model.generateContent(prompt)
@@ -54,7 +51,7 @@ object GoogleGenAiClient {
     }
 
     // Deprecated or compatibility wrapper
-    suspend fun generateContent(prompt: String, modelName: String = "gemini-1.5-flash-latest"): String {
+    suspend fun generateContent(prompt: String, modelName: String = "Gemini Flash Latest"): String {
         return generateContentServerSide(prompt, modelName)
     }
 }
