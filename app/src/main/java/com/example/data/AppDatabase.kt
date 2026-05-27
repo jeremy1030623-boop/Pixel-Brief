@@ -38,7 +38,10 @@ data class UserSettings(
     // Gemini Settings
     val geminiModelSelected: String = "gemini-1.5-flash",
     // SystemClock Sync Timing
-    val sleepSyncDurationMs: Long = 0
+    val sleepSyncDurationMs: Long = 0,
+    // Custom Avatar Settings
+    val avatarEmoji: String = "🦊",
+    val avatarGradientIndex: Int = 0
 )
 
 @Dao
@@ -50,7 +53,7 @@ interface UserSettingsDao {
     suspend fun saveUserSettings(settings: UserSettings)
 }
 
-@Database(entities = [UserSettings::class], version = 7, exportSchema = false)
+@Database(entities = [UserSettings::class], version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
 

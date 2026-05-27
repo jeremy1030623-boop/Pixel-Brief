@@ -176,6 +176,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         ) {
                             GreetingSection(
                                 username = username,
+                                avatarEmoji = userSettings?.avatarEmoji ?: "🦊",
+                                avatarGradientIndex = userSettings?.avatarGradientIndex ?: 0,
                                 greeting = timeState.greeting,
                                 time = timeState.time,
                                 weather = weather,
@@ -183,9 +185,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isNight = isNight,
                                 onSettingsClick = { isSettingsOpen = true },
-                                onNameChange = { newName ->
+                                onProfileChange = { newName, newEmoji, newGradientIndex ->
                                     val current = userSettings ?: UserSettings()
-                                    viewModel.updateUserSettings(current.copy(username = newName))
+                                    viewModel.updateUserSettings(
+                                        current.copy(
+                                            username = newName,
+                                            avatarEmoji = newEmoji,
+                                            avatarGradientIndex = newGradientIndex
+                                        )
+                                    )
                                 },
                                 onRefreshLocation = {
                                     checkAndRequestLocationPermission()
@@ -321,27 +329,53 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
     }
 }
 
+val AvatarGradients = listOf(
+    listOf(Color(0xFF00A896), Color(0xFFB388FF)), // Oceanic Aurora
+    listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)), // Lavender Dream
+    listOf(Color(0xFFF59E0B), Color(0xFFEF4444)), // Tropical Sunset
+    listOf(Color(0xFF10B981), Color(0xFF3B82F6)), // Emerald Mint
+    listOf(Color(0xFF3F51B5), Color(0xFFE91E63)), // Cosmic Indigo
+    listOf(Color(0xFF374151), Color(0xFFFCD34D))  // Charcoal Gold
+)
+
+val AvatarEmojis = listOf(
+    "🦊", "🐼", "🦁", "🐨", "🐱", "🐶", "🐯", "🐻", 
+    "🚀", "🎨", "🌟", "🎯", "☕", "☀️", "🌈", "🔥"
+)
+
 @Composable
-fun UserAvatar(username: String) {
+fun UserAvatar(
+    username: String,
+    avatarEmoji: String,
+    gradientIndex: Int,
+    size: androidx.compose.ui.unit.Dp = 52.dp,
+    textSize: androidx.compose.ui.unit.TextUnit = 24.sp,
+    modifier: Modifier = Modifier
+) {
+    val gradientColors = AvatarGradients.getOrElse(gradientIndex) { AvatarGradients[0] }
+    val displayChar = if (avatarEmoji.isBlank()) username.take(1).uppercase() else avatarEmoji
     Box(
-        modifier = Modifier
-            .size(52.dp)
-            .clip(RoundedCornerShape(50))
-            .background(Brush.linearGradient(listOf(AuroraOceanic, AuroraLavender))),
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(100))
+            .background(Brush.linearGradient(gradientColors)),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = username.take(1).uppercase(),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            text = displayChar,
+            fontSize = textSize,
+            style = MaterialTheme.typography.bodyLarge,
             color = Color.White
         )
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun GreetingSection(
     username: String,
+    avatarEmoji: String,
+    avatarGradientIndex: Int,
     time: String,
     greeting: String,
     weather: WeatherInfo,
@@ -349,14 +383,18 @@ fun GreetingSection(
     weatherUnit: String,
     isNight: Boolean,
     onSettingsClick: () -> Unit,
-    onNameChange: (String) -> Unit,
+    onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit,
     onRefreshLocation: () -> Unit
 ) {
-    var isEditingName by remember { mutableStateOf(false) }
+    var isEditingProfile by remember { mutableStateOf(false) }
     var tempName by remember { mutableStateOf(username) }
+    var selectedEmoji by remember { mutableStateOf(avatarEmoji.ifBlank { "🦊" }) }
+    var selectedGradientIndex by remember { mutableStateOf(avatarGradientIndex) }
 
-    LaunchedEffect(username) {
+    LaunchedEffect(username, avatarEmoji, avatarGradientIndex) {
         tempName = username
+        selectedEmoji = avatarEmoji.ifBlank { "🦊" }
+        selectedGradientIndex = avatarGradientIndex
     }
     
     val nextEvent = events.firstOrNull()
@@ -366,30 +404,50 @@ fun GreetingSection(
         ""
     }
 
-    if (isEditingName) {
+    if (isEditingProfile) {
         AlertDialog(
-            onDismissRequest = { isEditingName = false },
+            onDismissRequest = { isEditingProfile = false },
             title = {
                 Text(
-                    "修改您的暱稱",
+                    "自訂您的個人簡報檔案",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        "這將會用於早晨簡報的問候。您可以點擊「儲存」來儲存新的名字。",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "您可以自訂大頭像風格與稱呼，這些將會精緻呈現於全天簡報標題中！",
+                        style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
+                    
+                    // Huge visual preview of the Big Avatar
+                    UserAvatar(
+                        username = tempName,
+                        avatarEmoji = selectedEmoji,
+                        gradientIndex = selectedGradientIndex,
+                        size = 80.dp,
+                        textSize = 36.sp,
+                        modifier = Modifier
+                            .padding(bottom = 16.dp)
+                            .border(2.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(100))
+                    )
+                    
+                    // Name textfield
                     OutlinedTextField(
                         value = tempName,
                         onValueChange = { tempName = it },
                         label = { Text("您的名字") },
-                        modifier = Modifier.fillMaxWidth().testTag("edit_username_dialog_input"),
+                        modifier = Modifier.fillMaxWidth().testTag("profile_username_input"),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
@@ -400,23 +458,111 @@ fun GreetingSection(
                             unfocusedLabelColor = AuroraSlate
                         )
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Emoji Grid Selector
+                    Text(
+                        "一、選擇個人 Emoji 符號",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                    )
+                    
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        AvatarEmojis.chunked(4).forEach { chunk ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                chunk.forEach { emoji ->
+                                    val isSelected = selectedEmoji == emoji
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSelected) Color.White.copy(alpha = 0.25f)
+                                                else Color.White.copy(alpha = 0.05f)
+                                            )
+                                            .border(
+                                                width = 1.5.dp,
+                                                color = if (isSelected) AuroraMint else Color.Transparent,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable { selectedEmoji = emoji }
+                                            .padding(4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(emoji, fontSize = 22.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Gradient Color Selector
+                    Text(
+                        "二、選擇頭像漸層背景",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AvatarGradients.forEachIndexed { index, colors ->
+                            val isSelected = selectedGradientIndex == index
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(100))
+                                    .background(Brush.linearGradient(colors))
+                                    .border(
+                                        width = 2.dp,
+                                        color = if (isSelected) Color.White else Color.Transparent,
+                                        shape = RoundedCornerShape(100)
+                                    )
+                                    .clickable { selectedGradientIndex = index }
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "已選取",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp).align(Alignment.Center)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (tempName.isNotBlank()) {
-                            onNameChange(tempName.trim())
-                            isEditingName = false
+                            onProfileChange(tempName.trim(), selectedEmoji, selectedGradientIndex)
+                            isEditingProfile = false
                         }
                     },
-                    modifier = Modifier.testTag("save_username_dialog_button")
+                    modifier = Modifier.testTag("save_profile_button")
                 ) {
                     Text("儲存", color = AuroraMint, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { isEditingName = false }) {
+                TextButton(onClick = { isEditingProfile = false }) {
                     Text("取消", color = Color.White.copy(alpha = 0.6f))
                 }
             },
@@ -431,12 +577,21 @@ fun GreetingSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isEditingName = true }
+                .combinedClickable(
+                    onClick = { isEditingProfile = true },
+                    onLongClick = { isEditingProfile = true }
+                )
                 .padding(vertical = 4.dp)
                 .testTag("greeting_section_interactive_row"),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            UserAvatar(username)
+            UserAvatar(
+                username = username,
+                avatarEmoji = avatarEmoji,
+                gradientIndex = avatarGradientIndex,
+                size = 52.dp,
+                textSize = 24.sp
+            )
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -455,7 +610,7 @@ fun GreetingSection(
                     )
                 }
                 Text(
-                    text = "點擊以修改暱稱",
+                    text = "點擊或長按頭像以自訂大頭像與名稱",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF1E293B).copy(alpha = 0.5f)
                 )
