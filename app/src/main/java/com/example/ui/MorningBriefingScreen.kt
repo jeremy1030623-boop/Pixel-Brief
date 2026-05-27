@@ -704,21 +704,11 @@ fun GlassmorphicCard(
                     )
                 )
         )
-        // Translucent background card with soft glass borders and a modern, translucent touch
+        // Translucent background card with a modern, translucent touch
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = containerColor.copy(alpha = 0.42f)
-            ),
-            border = BorderStroke(
-                1.3.dp,
-                Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.35f),
-                        Color.White.copy(alpha = 0.05f),
-                        Color.White.copy(alpha = 0.20f)
-                    )
-                )
             ),
             shape = ExpressiveShape
         ) {
