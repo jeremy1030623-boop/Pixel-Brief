@@ -25,5 +25,6 @@ data class HealthInfo(
 @Serializable
 data class NewsItem(
     val title: String = "無標題",
-    val summary: String = "尚無摘要內容"
+    val summary: String = "尚無摘要內容",
+    val url: String? = null
 )

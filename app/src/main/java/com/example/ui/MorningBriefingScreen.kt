@@ -231,6 +231,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     try {
                                         val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.weather")
                                         if (intent != null) {
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                             context.startActivity(intent)
                                         } else {
                                             android.widget.Toast.makeText(context, "無法打開 Pixel Weather", android.widget.Toast.LENGTH_SHORT).show()
@@ -272,6 +273,34 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (isNight) Color(0xFFF1F5F9) else Color(0xFF334155)
             )
+            
+            val isUrlValid = remember(item.url) {
+                !item.url.isNullOrBlank() && (item.url.startsWith("http://") || item.url.startsWith("https://"))
+            }
+            if (isUrlValid) {
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(
+                    onClick = {
+                        try {
+                            item.url?.let { uriHandler.openUri(it) }
+                        } catch (e: Throwable) {
+                            android.util.Log.e("NewsDetailScreen", "Failed to open link", e)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AuroraMint,
+                        contentColor = Color(0xFF0F172A)
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("open_news_url_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("前往 Google 新聞閱讀完整報導", fontWeight = FontWeight.SemiBold)
+                }
+            }
+            
             Spacer(modifier = Modifier.height(100.dp)) // Padding for FAB so it doesn't overlap text
         }
         
@@ -451,29 +480,6 @@ fun TimeGreetingText(
             textAlign = TextAlign.Start,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
         )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .clickable { onRefreshLocation() }
-                .testTag("refresh_weather_row"),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.LocationOn,
-                contentDescription = "定位與天氣",
-                tint = AuroraMint,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "點擊更新位置與即時天氣預報",
-                style = MaterialTheme.typography.bodySmall,
-                color = AuroraMint
-            )
-        }
     }
 }
 
@@ -514,7 +520,7 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
             Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(modifier = Modifier.height(12.dp))
             if (events.isEmpty()) {
-                Text("今天目前沒有預約行程\n(可點擊授權日曆權限以同步行程)", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+                Text("今天沒有行程", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
             } else {
                 events.forEach { event ->
                     Row(

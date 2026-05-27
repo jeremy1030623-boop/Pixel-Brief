@@ -122,6 +122,19 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         // fetchData is already setting up data on IO
         fetchData()
         
+        // Periodic update every 30 minutes
+        viewModelScope.launch {
+            while (true) {
+                delay(1800000L) // 30 minutes in milliseconds
+                try {
+                    android.util.Log.d("MorningViewModel", "Periodic update triggered (every 30 mins)")
+                    fetchData()
+                } catch (e: Throwable) {
+                    android.util.Log.e("MorningViewModel", "Error in periodic update", e)
+                }
+            }
+        }
+        
         viewModelScope.launch {
             try {
                 _currentTimeFlow.collect { (time, greeting) ->
@@ -270,63 +283,80 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     fun fetchData() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Fetch real location
-            val location = locationHelper.getCurrentLocation()
-            val lat = location?.latitude ?: 25.0330
-            val lon = location?.longitude ?: 121.5654
-            
-            // Fetch real weather using Open-Meteo
-            val newWeather = try {
-                val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
-                WeatherInfo(
-                    condition = mapWeatherCode(weatherData.current.weather_code),
-                    currentTemp = weatherData.current.temperature_2m.toInt(),
-                    maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
-                    minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
-                )
-            } catch (e: Throwable) {
-                WeatherInfo(
-                    condition = "多雲時晴",
-                    currentTemp = 28,
-                    maxTemp = 32,
-                    minTemp = 24
-                )
-            }
-            _weatherInfo.value = newWeather
-
-            // Read persistent sleep info from userSettings
-            val settings = _userSettings.value
-            if (settings != null && settings.isSleepSynced) {
-                _sleepInfo.value = SleepInfo(
-                    hours = settings.sleepHours,
-                    snoringMinutes = settings.sleepSnoringMinutes,
-                    coughCount = settings.sleepCoughCount
-                )
-            } else {
-                _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
-            }
-
-            // Fetch Calendar Events
             try {
-                _nextEvents.value = calendarRepository.getNextEvents()
-            } catch (e: Throwable) {
-                // Handle permission or other errors
-            }
+                // Fetch real location
+                val location = locationHelper.getCurrentLocation()
+                val lat = location?.latitude ?: 25.0330
+                val lon = location?.longitude ?: 121.5654
+                
+                // Fetch real weather using Open-Meteo
+                val newWeather = try {
+                    val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
+                    WeatherInfo(
+                        condition = mapWeatherCode(weatherData.current.weather_code),
+                        currentTemp = weatherData.current.temperature_2m.toInt(),
+                        maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
+                        minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
+                    )
+                } catch (e: Throwable) {
+                    WeatherInfo(
+                        condition = "多雲時晴",
+                        currentTemp = 28,
+                        maxTemp = 32,
+                        minTemp = 24
+                    )
+                }
+                _weatherInfo.value = newWeather
 
-            // Fetch News using Gemini with FRESH weather data
-            fetchNews(newWeather)
+                // Read persistent sleep info from userSettings
+                val settings = _userSettings.value
+                if (settings != null && settings.isSleepSynced) {
+                    _sleepInfo.value = SleepInfo(
+                        hours = settings.sleepHours,
+                        snoringMinutes = settings.sleepSnoringMinutes,
+                        coughCount = settings.sleepCoughCount
+                    )
+                } else {
+                    _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
+                }
+
+                // Fetch Calendar Events
+                try {
+                    _nextEvents.value = calendarRepository.getNextEvents()
+                } catch (e: Throwable) {
+                    // Handle permission or other errors
+                }
+
+                // Fetch News using Gemini with FRESH weather data
+                fetchNews(newWeather)
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "Error inside fetchData", e)
+            }
         }
     }
 
     private suspend fun fetchNews(weather: WeatherInfo) {
-        val weatherContext = "目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。"
-        val prompt = "你是早晨簡報的 AI 助手。請根據目前的虛擬日期 2026年5月22日以及以下即時天氣資訊生成 3-5 則今日簡短新聞重點。$weatherContext 每則新聞需包含標題和摘要。請以繁體中文（台灣）撰寫。請務必讓其中一則新聞與當前天氣的戶外建議相關。請只返回 JSON 數組格式，不要有 Markdown 標記，例如：[{\"title\": \"...\", \"summary\": \"...\"}, ...]"
-        // Prioritize gemini-nano for on-device AI Core experience
-        val modelName = "gemini-nano"
+        val realNews = try {
+            GoogleNewsFetcher.fetchLatestTaiwanNews()
+        } catch (e: Throwable) {
+            android.util.Log.e("MorningViewModel", "Failed to fetch real Google News via RSS", e)
+            emptyList()
+        }
+
+        val realNewsContext = if (realNews.isNotEmpty()) {
+            val headlines = realNews.mapIndexed { index, item ->
+                "${index + 1}. [標題] ${item.title} (來源連結: ${item.link})"
+            }.joinToString("\n")
+            "以下是今天真實採集到的台灣 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則最重要、對讀者最相關且生活實用的焦點話題。請為每一選取的焦點編輯一段親切、簡短、大氣的『早安簡報摘要』，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+        } else {
+            "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻的在地生活與科技健康新聞話題，`url` 請留空）"
+        }
+
+        val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。\n請務必讓其中一則簡報重點與今日天氣及戶外活動建議呼應。\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切精簡的早安摘要...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"
+        val modelName = "gemini-3.5-flash"
         
         try {
             val context = getApplication<Application>().applicationContext
-            // Use AICore (nano) with fallback to server-side flash
             val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
             val cleanedJson = responseText.replace("```json", "").replace("```", "").trim()
             
