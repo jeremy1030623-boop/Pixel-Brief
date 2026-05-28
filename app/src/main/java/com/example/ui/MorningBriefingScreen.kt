@@ -180,7 +180,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     ) {
                         Spacer(modifier = Modifier.height(24.dp))
                         
-                        GeminiNanoStatusCard(modifier = Modifier.padding(bottom = 16.dp))
                         
                         AnimatedVisibility(
                             visible = visible,

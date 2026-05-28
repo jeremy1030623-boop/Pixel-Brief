@@ -466,7 +466,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。\n請務必讓其中一則簡報重點與今日天氣、穿著、紫外線防護或戶外活動建議深度呼應並給予極其溫馨的貼心指引。\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切深入的早安大摘要文字，字數保持120-200字，乾貨滿滿...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"
-        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
+        val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash-latest"
         
         try {
             val context = getApplication<Application>().applicationContext
