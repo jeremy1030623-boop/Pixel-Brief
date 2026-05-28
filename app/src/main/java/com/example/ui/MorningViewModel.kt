@@ -331,15 +331,49 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val lat = location?.latitude ?: 25.0330
                 val lon = location?.longitude ?: 121.5654
                 
-                // Fetch real weather using Open-Meteo
+                // Fetch real weather using System Cache first, fallback to Open-Meteo
                 val newWeather = try {
-                    val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
-                    WeatherInfo(
-                        condition = mapWeatherCode(weatherData.current.weather_code),
-                        currentTemp = weatherData.current.temperature_2m.toInt(),
-                        maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
-                        minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
-                    )
+                    var systemWeather: WeatherInfo? = null
+                    try {
+                        val weatherUri = android.net.Uri.parse("content://com.google.android.apps.weather.weatherprovider/weather")
+                        val cursor = getApplication<Application>().contentResolver.query(weatherUri, null, null, null, null)
+                        cursor?.use {
+                            if (it.moveToFirst()) {
+                                val tempIndex = it.getColumnIndex("temperature")
+                                val conditionIndex = it.getColumnIndex("condition")
+                                
+                                if (tempIndex != -1 && conditionIndex != -1) {
+                                    val tempStr = it.getString(tempIndex)
+                                    val condStr = it.getString(conditionIndex)
+                                    val temp = tempStr?.toFloatOrNull()?.toInt()
+                                    
+                                    if (temp != null && condStr != null) {
+                                        systemWeather = WeatherInfo(
+                                            condition = condStr,
+                                            currentTemp = temp,
+                                            maxTemp = temp + 4,
+                                            minTemp = temp - 4
+                                        )
+                                        android.util.Log.d("MorningViewModel", "Loaded weather from ContentProvider: $systemWeather")
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MorningViewModel", "ContentProvider fetch failed", e)
+                    }
+
+                    if (systemWeather != null) {
+                        systemWeather!!
+                    } else {
+                        val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
+                        WeatherInfo(
+                            condition = mapWeatherCode(weatherData.current.weather_code),
+                            currentTemp = weatherData.current.temperature_2m.toInt(),
+                            maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
+                            minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
+                        )
+                    }
                 } catch (e: Throwable) {
                     WeatherInfo(
                         condition = "多雲時晴",
