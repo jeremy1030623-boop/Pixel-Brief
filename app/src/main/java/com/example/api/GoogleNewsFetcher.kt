@@ -1,48 +1,95 @@
 package com.example.api
 
 import android.util.Log
+import android.util.Xml
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
-import java.util.regex.Pattern
+import org.xmlpull.v1.XmlPullParser
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 object GoogleNewsFetcher {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
 
     data class NewsArticle(
         val title: String,
         val link: String,
-        val pubDate: String
+        val pubDate: String,
+        val source: String
     )
 
     /**
      * Fetches news from a general Google News RSS feed URL.
      */
-    suspend fun fetchNewsFromUrl(url: String): List<NewsArticle> = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .build()
+    suspend fun fetchNewsFromUrl(urlStr: String): List<NewsArticle> = withContext(Dispatchers.IO) {
+        val articles = mutableListOf<NewsArticle>()
+        var connection: HttpsURLConnection? = null
 
         try {
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e("GoogleNewsFetcher", "Unsuccessful response code: ${response.code} for URL: $url")
-                return@withContext emptyList()
+            val url = URL(urlStr)
+            connection = url.openConnection() as HttpsURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+
+            if (connection.responseCode == HttpsURLConnection.HTTP_OK) {
+                val inputStream = connection.inputStream
+                val parser = Xml.newPullParser()
+                parser.setInput(inputStream, "UTF-8")
+
+                var eventType = parser.eventType
+                var currentTitle = ""
+                var currentLink = ""
+                var currentPubDate = ""
+                var currentSource = ""
+                var insideItem = false
+
+                while (eventType != XmlPullParser.END_DOCUMENT) {
+                    val tagName = parser.name
+                    when (eventType) {
+                        XmlPullParser.START_TAG -> {
+                            if (tagName.equals("item", ignoreCase = true)) {
+                                insideItem = true
+                            } else if (insideItem) {
+                                when {
+                                    tagName.equals("title", ignoreCase = true) -> currentTitle = parser.nextText()
+                                    tagName.equals("link", ignoreCase = true) -> currentLink = parser.nextText()
+                                    tagName.equals("pubDate", ignoreCase = true) -> currentPubDate = parser.nextText()
+                                    tagName.equals("source", ignoreCase = true) -> currentSource = parser.nextText()
+                                }
+                            }
+                        }
+                        XmlPullParser.END_TAG -> {
+                            if (tagName.equals("item", ignoreCase = true)) {
+                                // Clean up title if it contains the source suffix
+                                val cleanTitle = if (currentTitle.contains(" - ")) {
+                                    currentTitle.substringBeforeLast(" - ").trim()
+                                } else {
+                                    currentTitle
+                                }
+
+                                articles.add(NewsArticle(cleanTitle, currentLink, currentPubDate, currentSource))
+                                insideItem = false
+                                // Reset for next item
+                                currentTitle = ""
+                                currentLink = ""
+                                currentPubDate = ""
+                                currentSource = ""
+                            }
+                        }
+                    }
+                    eventType = parser.next()
+                }
+                Log.d("GoogleNewsFetcher", "Successfully fetched ${articles.size} news from RSS: $urlStr")
+            } else {
+                Log.e("GoogleNewsFetcher", "Unsuccessful response code: ${connection.responseCode} for URL: $urlStr")
             }
-            val xmlText = response.body?.string() ?: ""
-            val parsed = parseRssXml(xmlText)
-            Log.d("GoogleNewsFetcher", "Successfully fetched ${parsed.size} news from RSS: $url")
-            return@withContext parsed
-        } catch (e: Throwable) {
-            Log.e("GoogleNewsFetcher", "Failed to fetch Google RSS News from $url", e)
-            return@withContext emptyList()
+        } catch (e: Exception) {
+            Log.e("GoogleNewsFetcher", "Failed to fetch Google RSS News from $urlStr", e)
+        } finally {
+            connection?.disconnect()
         }
+        return@withContext articles
     }
 
     /**
@@ -67,51 +114,5 @@ object GoogleNewsFetcher {
         val query = if (cleanQuery.isNotEmpty()) cleanQuery else "台灣"
         val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
         return fetchNewsFromUrl("https://news.google.com/rss/search?q=$encodedQuery&hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
-    }
-
-    private fun parseRssXml(xml: String): List<NewsArticle> {
-        val list = mutableListOf<NewsArticle>()
-        val itemPattern = Pattern.compile("<item>(.*?)</item>", Pattern.DOTALL)
-        val titlePattern = Pattern.compile("<title>(.*?)</title>", Pattern.DOTALL)
-        val linkPattern = Pattern.compile("<link>(.*?)</link>", Pattern.DOTALL)
-        val pubDatePattern = Pattern.compile("<pubDate>(.*?)</pubDate>", Pattern.DOTALL)
-
-        val itemMatcher = itemPattern.matcher(xml)
-        var count = 0
-        while (itemMatcher.find() && count < 10) {
-            val itemContent = itemMatcher.group(1) ?: continue
-            val titleMatcher = titlePattern.matcher(itemContent)
-            val linkMatcher = linkPattern.matcher(itemContent)
-            val pubDateMatcher = pubDatePattern.matcher(itemContent)
-
-            val title = if (titleMatcher.find()) {
-                titleMatcher.group(1)?.let { cleanCData(it) } ?: ""
-            } else ""
-
-            val link = if (linkMatcher.find()) {
-                linkMatcher.group(1)?.let { cleanCData(it) } ?: ""
-            } else ""
-
-            val pubDate = if (pubDateMatcher.find()) {
-                pubDateMatcher.group(1)?.let { cleanCData(it) } ?: ""
-            } else ""
-
-            // Refine clean title by removing " - source" suffix which Google News automatically appends.
-            val cleanTitle = if (title.contains(" - ")) {
-                title.substringBeforeLast(" - ").trim()
-            } else {
-                title
-            }
-
-            if (cleanTitle.isNotEmpty()) {
-                list.add(NewsArticle(cleanTitle, link, pubDate))
-                count++
-            }
-        }
-        return list
-    }
-
-    private fun cleanCData(text: String): String {
-        return text.replace("<![CDATA[", "").replace("]]>", "").replace("&amp;", "&").trim()
     }
 }

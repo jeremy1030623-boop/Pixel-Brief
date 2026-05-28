@@ -23,7 +23,11 @@ object GoogleGenAiClient {
         val config = generationConfig {
             temperature = 0.7f
         }
-        val actualModelName = if (modelName == "Gemini Flash Latest") "gemini-1.5-flash-latest" else modelName
+        val actualModelName = when (modelName) {
+            "Gemini Flash Latest", "gemini-1.5-flash" -> "gemini-1.5-flash-latest"
+            "gemini-1.5-pro" -> "gemini-1.5-pro-latest"
+            else -> modelName
+        }
         return GenerativeModel(
             modelName = actualModelName,
             apiKey = apiKey,

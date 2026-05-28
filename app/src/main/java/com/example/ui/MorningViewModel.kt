@@ -484,7 +484,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
         val realNewsContext = if (realNews.isNotEmpty()) {
             val headlines = realNews.mapIndexed { index, item ->
-                "${index + 1}. [標題] ${item.title} (來源連結: ${item.link})"
+                "${index + 1}. [標題] ${item.title} (媒體來源: ${item.source}, 網址: ${item.link})"
             }.joinToString("\n")
             if (newsMode == "international") {
                 "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請詳細描寫脈絡，提供其對個人生活、科學保健或全球動態的具體啟示，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
@@ -523,7 +523,12 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             )
 
             try {
-                val response = RetrofitClient.service.generateContent(apiKey, request)
+                val actualModel = when (modelName) {
+                    "Gemini Flash Latest", "gemini-1.5-flash" -> "gemini-1.5-flash-latest"
+                    "gemini-1.5-pro" -> "gemini-1.5-pro-latest"
+                    else -> modelName
+                }
+                val response = RetrofitClient.service.generateContent(actualModel, apiKey, request)
                 val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
                 val cleanedJsonFallback = jsonText.replace("```json", "").replace("```", "").trim()
                 

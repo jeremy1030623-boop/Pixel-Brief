@@ -1837,7 +1837,7 @@ fun SettingsScreen(
                         Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("gemini-1.5-flash" to "Gemini 1.5 Flash", "gemini-1.5-pro" to "Gemini 1.5 Pro").forEach { (code, label) ->
+                            listOf("gemini-1.5-flash-latest" to "Gemini 1.5 Flash", "gemini-1.5-pro-latest" to "Gemini 1.5 Pro").forEach { (code, label) ->
                                 val selected = editGeminiModelSelected == code
                                 Button(
                                     onClick = { editGeminiModelSelected = code },
