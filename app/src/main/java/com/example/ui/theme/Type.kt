@@ -6,54 +6,62 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+// Set of Material typography styles to start with
 val Typography = Typography(
     displayLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = GoogleSansFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 44.sp,
-        lineHeight = 52.sp,
-        letterSpacing = (-0.5).sp
+        fontSize = 57.sp,
+        lineHeight = 64.sp,
+        letterSpacing = (-0.25).sp
     ),
-    headlineMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+    displayMedium = TextStyle(
+        fontFamily = GoogleSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 45.sp,
+        lineHeight = 52.sp,
+        letterSpacing = 0.sp
+    ),
+    displaySmall = TextStyle(
+        fontFamily = GoogleSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        letterSpacing = 0.sp
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = GoogleSansFontFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
         letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
+        fontFamily = GoogleSansFontFamily,
+        fontWeight = FontWeight.Medium,
         fontSize = 22.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
-    titleMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
-    ),
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.Monospace,
+        fontFamily = GoogleSansFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
+        fontSize = 16.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.5.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = GoogleSansFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp
     ),
-    labelMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+    labelLarge = TextStyle(
+        fontFamily = GoogleSansFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.1.sp
     )
 )
