@@ -62,6 +62,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val healthInfo by viewModel.healthInfo.collectAsState()
     val events by viewModel.nextEvents.collectAsState()
     val news by viewModel.newsDetail.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val goalSuggestion by viewModel.goalSuggestion.collectAsState()
 
@@ -196,7 +197,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isNight = isNight,
                                 goalSuggestion = goalSuggestion,
-                                onSettingsClick = { isSettingsOpen = true },
+                                isRefreshing = isRefreshing, onSettingsClick = { isSettingsOpen = true },
                                 onProfileChange = { newName, newEmoji, newGradientIndex ->
                                     val current = userSettings ?: UserSettings()
                                     viewModel.updateUserSettings(
@@ -208,7 +209,11 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     )
                                 },
                                 onRefreshLocation = {
-                                    checkAndRequestLocationPermission()
+                                    if (locationPermissionGranted.value) {
+                                        viewModel.fetchData()
+                                    } else {
+                                        checkAndRequestLocationPermission()
+                                    }
                                 }
                             )
                         }
@@ -321,7 +326,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
                 ) {
                     Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("前往 Google 新聞閱讀完整報導", fontWeight = FontWeight.SemiBold)
+                    Text("閱讀完整即時新聞報導", fontWeight = FontWeight.SemiBold)
                 }
             }
             
@@ -395,7 +400,7 @@ fun GreetingSection(
     weatherUnit: String,
     isNight: Boolean,
     goalSuggestion: String,
-    onSettingsClick: () -> Unit,
+    isRefreshing: Boolean, onSettingsClick: () -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit,
     onRefreshLocation: () -> Unit
 ) {
@@ -627,6 +632,77 @@ fun GreetingSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF1E293B).copy(alpha = 0.5f)
                 )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Interactive Location/Positioning Row
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Location Badge Info
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isNight) Color.White.copy(alpha = 0.12f) else Color(0xFF1E293B).copy(alpha = 0.08f))
+                    .clickable { if (!isRefreshing) onRefreshLocation() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = "當前定位位置",
+                    tint = if (isNight) Color(0xFF818CF8) else Color(0xFF4F46E5),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isRefreshing) "同步與定位更新中..." else "目前定位城市：${weather.locationName}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isNight) Color.White else Color(0xFF1E293B),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Explicit Location Refresh button to satisfy user request "定位" perfectly
+            OutlinedButton(
+                onClick = { if (!isRefreshing) onRefreshLocation() },
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag("refresh_location_button"),
+                enabled = !isRefreshing,
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (isNight) Color.White.copy(alpha = 0.3f) else Color(0xFF1E293B).copy(alpha = 0.2f)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = if (isNight) Color.White else Color(0xFF1E293B)
+                )
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = if (isNight) Color.White else Color(0xFF1E293B)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("同步中...", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "自動偵測重新定位",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("重新定位", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
             }
         }
         
@@ -1101,20 +1177,11 @@ fun WeatherCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF59E0B)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.WbSunny,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                        tint = Color.White
-                    )
-                }
+                WeatherAnimatedIcon(
+                    condition = weather.condition,
+                    isNight = isNight,
+                    modifier = Modifier.size(52.dp)
+                )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -1405,11 +1472,10 @@ fun SimulatedWeatherApp(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Current Weather Visual
-            Icon(
-                Icons.Default.WbSunny,
-                contentDescription = null,
-                modifier = Modifier.size(100.dp),
-                tint = Color(0xFFFBBF24)
+            WeatherAnimatedIcon(
+                condition = weather.condition,
+                isNight = false,
+                modifier = Modifier.size(120.dp)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -1448,7 +1514,11 @@ fun SimulatedWeatherApp(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(timeStr, style = MaterialTheme.typography.labelMedium, color = Color.White)
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Icon(Icons.Default.WbSunny, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color(0xFFFBBF24))
+                                WeatherAnimatedIcon(
+                                    condition = weather.condition,
+                                    isNight = false,
+                                    modifier = Modifier.size(24.dp)
+                                )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(formatTemperature(temp, weatherUnit), style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = FontWeight.Bold)
                             }
@@ -1469,22 +1539,33 @@ fun SimulatedWeatherApp(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("詳細天氣狀態", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("詳細天氣狀態 (Open-Meteo)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("體感溫度", color = Color.White.copy(alpha = 0.7f))
-                        Text(formatTemperature(weather.currentTemp + 1, weatherUnit), color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(formatTemperature(weather.apparentTemp, weatherUnit) + "°", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("空氣品質", color = Color.White.copy(alpha = 0.7f))
-                        Text("優 (AQI 28)", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("相對濕度", color = Color.White.copy(alpha = 0.7f))
+                        Text("${weather.humidity}%", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("降雨機率", color = Color.White.copy(alpha = 0.7f))
-                        Text("10%", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("當日降雨機率", color = Color.White.copy(alpha = 0.7f))
+                        Text("${weather.precipitationProb}%", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("紫外線指數", color = Color.White.copy(alpha = 0.7f))
-                        Text("中等 (4)", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("風速 (10米高度)", color = Color.White.copy(alpha = 0.7f))
+                        Text("${weather.windSpeed} km/h", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("最大紫外線指數", color = Color.White.copy(alpha = 0.7f))
+                        val uvText = when {
+                            weather.uvIndex < 3f -> "低量 (${weather.uvIndex})"
+                            weather.uvIndex < 6f -> "中等 (${weather.uvIndex})"
+                            weather.uvIndex < 8f -> "高量 (${weather.uvIndex})"
+                            weather.uvIndex < 11f -> "過量 (${weather.uvIndex})"
+                            else -> "極強 (${weather.uvIndex})"
+                        }
+                        Text(uvText, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1537,6 +1618,7 @@ fun SettingsScreen(
 ) {
     // Local copy of editable options state
     var editUsername by remember { mutableStateOf(settings.username) }
+    var editDefaultCity by remember { mutableStateOf(settings.defaultCity) }
     var editUseFineLocation by remember { mutableStateOf(settings.preciseLocationEnabled) }
     var editWeatherUnit by remember { mutableStateOf(settings.weatherUnit) }
     var editShowFloatingBackButton by remember { mutableStateOf(settings.showFloatingBackButton) }
@@ -1597,6 +1679,7 @@ fun SettingsScreen(
                     onClick = {
                         val updated = settings.copy(
                             username = editUsername,
+                            defaultCity = editDefaultCity,
                             preciseLocationEnabled = editUseFineLocation,
                             weatherUnit = editWeatherUnit,
                             showFloatingBackButton = editShowFloatingBackButton,
@@ -1699,7 +1782,6 @@ fun SettingsScreen(
                     }
                 }
 
-                // Section 2: 天氣與位置 (Weather & Location)
                 item {
                     SettingsSectionCard(title = "二、天氣與位置") {
                         SettingsRow(
@@ -1709,6 +1791,37 @@ fun SettingsScreen(
                             onCheckedChange = { editUseFineLocation = it },
                             testTag = "location_settings_switch"
                         )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+                        
+                        Text(
+                            "備用/預設城市",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color(0xFFCBD5E1),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "當 GPS 定位失敗、未取得授權或不支援時，系統將使用此城市作為預設氣象與在地新聞依據",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = editDefaultCity,
+                            onValueChange = { editDefaultCity = it },
+                            placeholder = { Text("例如：高雄、花蓮、台中") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("default_city_settings_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF3B82F6),
+                                unfocusedBorderColor = Color(0xFF475569)
+                            ),
+                            singleLine = true
+                        )
+
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                         
                         Text("天氣單位規格", style = MaterialTheme.typography.titleSmall, color = Color(0xFFCBD5E1))

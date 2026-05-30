@@ -19,13 +19,19 @@ data class OpenMeteoResponse(
 @Serializable
 data class CurrentWeatherData(
     val temperature_2m: Float,
-    val weather_code: Int
+    val weather_code: Int,
+    val apparent_temperature: Float? = null,
+    val relative_humidity_2m: Int? = null,
+    val wind_speed_10m: Float? = null,
+    val precipitation: Float? = null
 )
 
 @Serializable
 data class DailyWeatherData(
     val temperature_2m_max: List<Float>,
-    val temperature_2m_min: List<Float>
+    val temperature_2m_min: List<Float>,
+    val uv_index_max: List<Float>? = null,
+    val precipitation_probability_max: List<Int>? = null
 )
 
 interface OpenMeteoApiService {
@@ -33,8 +39,8 @@ interface OpenMeteoApiService {
     suspend fun getForecast(
         @Query("latitude") latitude: Double = 25.0330,
         @Query("longitude") longitude: Double = 121.5654,
-        @Query("current") current: String = "temperature_2m,weather_code",
-        @Query("daily") daily: String = "temperature_2m_max,temperature_2m_min",
+        @Query("current") current: String = "temperature_2m,weather_code,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation",
+        @Query("daily") daily: String = "temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max",
         @Query("timezone") timezone: String = "Asia/Taipei"
     ): OpenMeteoResponse
 }

@@ -86,6 +86,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     )
     val newsDetail = _newsDetail.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     data class TimeState(val time: String, val greeting: String)
 
     private val _timeState = MutableStateFlow(TimeState("", "Good morning,"))
@@ -325,11 +328,20 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     fun fetchData() {
         viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
             try {
-                // Fetch real location
+                // Determine city name and coordinates
                 val location = locationHelper.getCurrentLocation()
-                val lat = location?.latitude ?: 25.0330
-                val lon = location?.longitude ?: 121.5654
+                val detected = getCityNameFromLocation(location)
+                val defaultCityOpt = _userSettings.value?.defaultCity ?: "台北"
+                val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultCityOpt
+                
+                // Get lat/lon: prioritize GPS location, fallback to mapped city coordinates
+                val (lat, lon) = if (location != null) {
+                    Pair(location.latitude, location.longitude)
+                } else {
+                    getCoordinatesForCity(finalCity)
+                }
                 
                 // Fetch real weather using System Cache first, fallback to Open-Meteo
                 val newWeather = try {
@@ -352,7 +364,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                                             condition = condStr,
                                             currentTemp = temp,
                                             maxTemp = temp + 4,
-                                            minTemp = temp - 4
+                                            minTemp = temp - 4,
+                                            locationName = finalCity
                                         )
                                         android.util.Log.d("MorningViewModel", "Loaded weather from ContentProvider: $systemWeather")
                                     }
@@ -364,22 +377,30 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     if (systemWeather != null) {
-                        systemWeather!!
+                        systemWeather!!.copy(locationName = finalCity)
                     } else {
                         val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
                         WeatherInfo(
                             condition = mapWeatherCode(weatherData.current.weather_code),
                             currentTemp = weatherData.current.temperature_2m.toInt(),
                             maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
-                            minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22
+                            minTemp = weatherData.daily.temperature_2m_min.firstOrNull()?.toInt() ?: 22,
+                            apparentTemp = weatherData.current.apparent_temperature?.toInt() ?: (weatherData.current.temperature_2m.toInt() + 1),
+                            humidity = weatherData.current.relative_humidity_2m ?: 75,
+                            windSpeed = weatherData.current.wind_speed_10m ?: 10f,
+                            precipitationProb = weatherData.daily.precipitation_probability_max?.firstOrNull() ?: 10,
+                            uvIndex = weatherData.daily.uv_index_max?.firstOrNull() ?: 5.0f,
+                            locationName = finalCity
                         )
                     }
                 } catch (e: Throwable) {
+                    android.util.Log.e("MorningViewModel", "Open-Meteo forecast fetch failed", e)
                     WeatherInfo(
                         condition = "多雲時晴",
                         currentTemp = 28,
                         maxTemp = 32,
-                        minTemp = 24
+                        minTemp = 24,
+                        locationName = finalCity
                     )
                 }
                 _weatherInfo.value = newWeather
@@ -400,17 +421,45 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 try {
                     _nextEvents.value = calendarRepository.getNextEvents()
                 } catch (e: Throwable) {
-                    // Handle permission or other errors
+                    android.util.Log.e("MorningViewModel", "Failed to fetch calendar events", e)
                 }
 
                 // Fetch News using Gemini with FRESH weather data
                 fetchNews(newWeather)
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Error inside fetchData", e)
+            } finally {
+                _isRefreshing.value = false
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
             updateFunFact()
+        }
+    }
+
+    private fun getCoordinatesForCity(city: String): Pair<Double, Double> {
+        return when {
+            city.contains("台北") || city.contains("臺北") -> Pair(25.0330, 121.5654)
+            city.contains("新北") -> Pair(25.0120, 121.4657)
+            city.contains("桃園") -> Pair(24.9936, 121.3010)
+            city.contains("台中") || city.contains("臺中") -> Pair(24.1477, 120.6736)
+            city.contains("台南") || city.contains("臺南") -> Pair(22.9908, 120.2133)
+            city.contains("高雄") -> Pair(22.6273, 120.3014)
+            city.contains("基隆") -> Pair(25.1283, 121.7392)
+            city.contains("新竹") -> Pair(24.8138, 120.9675)
+            city.contains("苗栗") -> Pair(24.5601, 120.8206)
+            city.contains("彰化") -> Pair(24.0517, 120.5161)
+            city.contains("南投") -> Pair(23.9155, 120.6860)
+            city.contains("雲林") -> Pair(23.7092, 120.4313)
+            city.contains("嘉義") -> Pair(23.4801, 120.4491)
+            city.contains("屏東") -> Pair(22.6660, 120.4859)
+            city.contains("宜蘭") -> Pair(24.7021, 121.7377)
+            city.contains("花蓮") -> Pair(23.9872, 121.6016)
+            city.contains("台東") || city.contains("臺東") -> Pair(22.7583, 121.1444)
+            city.contains("澎湖") -> Pair(23.5711, 119.5793)
+            city.contains("金門") -> Pair(24.4494, 118.3773)
+            city.contains("馬祖") -> Pair(26.1558, 119.9519)
+            else -> Pair(25.0330, 121.5654) // default to Taipei
         }
     }
 
@@ -518,10 +567,10 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
             _newsDetail.value = news
         } catch (e: Throwable) {
-            // Fault-tolerant secondary fallback using direct Retrofit Client
+            android.util.Log.e("MorningViewModel", "GoogleGenAiClient generation failed, attempting backup...", e)
             val apiKey = BuildConfig.GEMINI_API_KEY
             if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-                _newsDetail.value = getStaticFallbackNews(newsMode)
+                _newsDetail.value = mapRealArticlesToNewsItems(realNews, newsMode)
                 return
             }
 
@@ -542,8 +591,23 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val news = json.decodeFromString<List<NewsItem>>(cleanedJsonFallback)
                 _newsDetail.value = news
             } catch (ex: Throwable) {
-                _newsDetail.value = getStaticFallbackNews(newsMode)
+                android.util.Log.e("MorningViewModel", "Retrofit generateContent failed, mapping real news...", ex)
+                _newsDetail.value = mapRealArticlesToNewsItems(realNews, newsMode)
             }
+        }
+    }
+
+    private fun mapRealArticlesToNewsItems(realNews: List<GoogleNewsFetcher.NewsArticle>, newsMode: String): List<NewsItem> {
+        if (realNews.isEmpty()) {
+            return getStaticFallbackNews(newsMode)
+        }
+        return realNews.take(5).map { article ->
+            val formattedSummary = "【即時焦點 • 來源：${article.source}】這是一則來自當前的即時新聞。發佈時間為 ${article.pubDate}。點擊連結可以快速閱讀源自各大媒體之原始深層報導內容，一手掌握最新在地生活資訊。"
+            NewsItem(
+                title = article.title,
+                summary = formattedSummary,
+                url = article.link
+            )
         }
     }
 

@@ -7,7 +7,13 @@ data class WeatherInfo(
     val currentTemp: Int = 26,
     val maxTemp: Int = 30,
     val minTemp: Int = 22,
-    val iconRes: Int = 0 // In a real app, this would be an icon ID
+    val apparentTemp: Int = 27,
+    val humidity: Int = 76,
+    val windSpeed: Float = 11.2f,
+    val precipitationProb: Int = 10,
+    val uvIndex: Float = 5.0f,
+    val iconRes: Int = 0, // In a real app, this would be an icon ID
+    val locationName: String = "台北"
 )
 
 data class SleepInfo(
