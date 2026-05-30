@@ -672,15 +672,15 @@ val ExpressiveShape = RoundedCornerShape(32.dp)
 
 fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
     if (!isNight) {
-        // Safe dark glassmorphic backgrounds for cards during the day to keep white text ultra-legible
+        // High-end, premium sapphire-indigo and misty ocean-slate translucent cards to ensure white text is perfectly legible
         return when {
-            condition.contains("雷") -> Color(0xFF78350F).copy(alpha = 0.85f) // Warm dark brown-amber
-            condition.contains("雨") -> Color(0xFF451A03).copy(alpha = 0.85f) // Warm deep rust
-            condition.contains("雪") -> Color(0xFF713F12).copy(alpha = 0.82f) // Warm gold-slate
-            condition.contains("霧") || condition.contains("陰") -> Color(0xFF5D4037).copy(alpha = 0.82f) // Warm brown
-            condition.contains("多雲") -> Color(0xFFB45309).copy(alpha = 0.85f) // Warm amber
-            condition == "晴朗" -> Color(0xFFD97706).copy(alpha = 0.85f) // Sunny gold
-            else -> Color(0xFF78350F).copy(alpha = 0.85f) // Dark amber
+            condition.contains("雷") -> Color(0xFF2E2A4F).copy(alpha = 0.82f) // Stormy: Mystic electric indigo
+            condition.contains("雨") -> Color(0xFF1E3A5F).copy(alpha = 0.82f) // Rainy: Deep ocean navy
+            condition.contains("雪") -> Color(0xFF2C4C5E).copy(alpha = 0.82f) // Snowy: Polar blue-grey
+            condition.contains("霧") || condition.contains("陰") -> Color(0xFF374151).copy(alpha = 0.82f) // Overcast/Mist: Clean charcoal slate
+            condition.contains("多雲") -> Color(0xFF3B3B5E).copy(alpha = 0.82f) // Cloudy: Sophisticated slate-indigo
+            condition == "晴朗" -> Color(0xFF0F2C59).copy(alpha = 0.82f) // Clear: Luxurious celestial navy
+            else -> Color(0xFF1E293B).copy(alpha = 0.82f) // Deep slate
         }
     }
 
@@ -1289,57 +1289,57 @@ fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
         condition.contains("雷") -> Brush.verticalGradient(
             listOf(
                 Color(0xFFFFFFFF),                
-                Color(0xFFFEF9C3), // Light cream
-                Color(0xFFFDE68A), // Light amber
-                Color(0xFFB45309)  // Deep amber
+                Color(0xFFE4E4E7), // Light mist grey
+                Color(0xFFC7D2FE), // Pale electric lavender-blue
+                Color(0xFF93C5FD)  // Airy pale sky
             )
         )
         condition.contains("雨") -> Brush.verticalGradient(
             listOf(
                 Color(0xFFFFFFFF),                
-                Color(0xFFFEF3C7), // Light amber
-                Color(0xFFFCD34D), // Sunny yellow-amber
-                Color(0xFFD97706)  // Rust-amber
+                Color(0xFFF0F9FF), // Extremely light blue
+                Color(0xFFE0F2FE), // Soft misty blue
+                Color(0xFFBAE6FD)  // Fresh light sky rain
             )
         )
         condition.contains("雪") -> Brush.verticalGradient(
             listOf(
                 Color(0xFFFFFFFF),
-                Color(0xFFFFFBEB), // Soft cream
-                Color(0xFFFDE68A), // Light gold
-                Color(0xFFD97706)  // Amber base
+                Color(0xFFF1F5F9), // Ice-white
+                Color(0xFFE0F2FE), // Cool cyan-white glow
+                Color(0xFFE2E8F0)  // Nordic soft slate
             )
         )
         condition.contains("霧") || condition.contains("陰") -> Brush.verticalGradient(
             listOf(
                 Color(0xFFFFFFFF),
-                Color(0xFFFEFCE8), // Creamy
-                Color(0xFFFDE68A), // Golden
-                Color(0xFFB45309)  // Warm brown amber
+                Color(0xFFF4F4F5), // Diffused light grey
+                Color(0xFFE4E4E7), // Elegant misty zinc
+                Color(0xFFD4D4D8)  // Soft cloud mist
             )
         )
         condition.contains("多雲") -> Brush.verticalGradient(
             listOf(
                 Color(0xFFFFFFFF),
-                Color(0xFFFFFDF2), // Subtle warm hue
-                Color(0xFFFDE68A), // Sunny light
-                Color(0xFFD97706)  // Warm golden amber
+                Color(0xFFF8FAFC), // Air-light white
+                Color(0xFFEFF6FF), // Soft morning light blue
+                Color(0xFFDBEAFE)  // Sweet lavender-tinged pale indigo
             )
         )
         condition == "晴朗" -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFFEF3C7),
-                Color(0xFFFCD34D),
-                Color(0xFFD97706)
+                Color(0xFFBAE6FD), // Glowing light sky blue
+                Color(0xFFE0F2FE), // Soft azure transition
+                Color(0xFFFEF3C7), // Warm golden sunrise sunbeams
+                Color(0xFFFFFBEB)  // Premium morning cream white
             )
         )
         else -> Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFFEF3C7),
-                Color(0xFFFDE68A),
-                Color(0xFFF59E0B)
+                Color(0xFFE0F2FE), // Soft sky blue
+                Color(0xFFEFF6FF), // Airy clouds
+                Color(0xFFFEF3C7), // Gentle sunrise rays
+                Color(0xFFFFFDF5)  // Clean white sand
             )
         )
     }
