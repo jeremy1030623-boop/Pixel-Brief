@@ -51,6 +51,7 @@ sealed class ScreenState {
     object Home : ScreenState()
     object Settings : ScreenState()
     data class NewsDetail(val item: NewsItem) : ScreenState()
+    object WeatherDetail : ScreenState()
 }
 
 @Composable
@@ -76,6 +77,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
+    var isWeatherDetailOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val calendarPermissionGranted = remember {
@@ -138,19 +140,21 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             .background(brush = backgroundBrush)
     ) {
         val currentNewsItem = selectedNewsItem
-        val screenState = remember(currentNewsItem, isSettingsOpen) {
+        val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen) {
             when {
                 currentNewsItem != null -> ScreenState.NewsDetail(currentNewsItem)
                 isSettingsOpen -> ScreenState.Settings
+                isWeatherDetailOpen -> ScreenState.WeatherDetail
                 else -> ScreenState.Home
             }
         }
 
         // Handle back navigation for sub-screens
-        BackHandler(enabled = currentNewsItem != null || isSettingsOpen) {
+        BackHandler(enabled = currentNewsItem != null || isSettingsOpen || isWeatherDetailOpen) {
             when {
                 currentNewsItem != null -> selectedNewsItem = null
                 isSettingsOpen -> isSettingsOpen = false
+                isWeatherDetailOpen -> isWeatherDetailOpen = false
             }
         }
 
@@ -162,6 +166,11 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                 is ScreenState.NewsDetail -> {
                     NewsDetailScreen(state.item, isNight) {
                         selectedNewsItem = null
+                    }
+                }
+                is ScreenState.WeatherDetail -> {
+                    WeatherDetailScreen(weather, isNight) {
+                        isWeatherDetailOpen = false
                     }
                 }
                 is ScreenState.Settings -> {
@@ -257,17 +266,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 },
                                 onNewsClick = { item -> selectedNewsItem = item },
                                 onWeatherClick = { 
-                                    try {
-                                        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.apps.weather")
-                                        if (intent != null) {
-                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            context.startActivity(intent)
-                                        } else {
-                                            android.widget.Toast.makeText(context, "無法打開 Pixel Weather", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    } catch (e: Throwable) {
-                                        android.widget.Toast.makeText(context, "無法打開 Pixel Weather: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    isWeatherDetailOpen = true
                                 }
                             )
                         }
@@ -336,6 +335,189 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
         FloatingActionButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
+            containerColor = if (isNight) Color.White else AuroraMidnight,
+            contentColor = if (isNight) Color.Black else Color.White,
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+        }
+    }
+}
+
+@Composable
+fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Unit) {
+    val warnings = remember(weather) {
+        val list = mutableListOf<String>()
+        if (weather.precipitationProb >= 50) {
+            list.add("⚠️ 降雨機率高（${weather.precipitationProb}%）：出門請記得攜帶雨具！")
+        } else if (weather.precipitationProb >= 30) {
+            list.add("☁️ 有局部短暫雨機會（${weather.precipitationProb}%）：建議隨身攜帶折疊傘。")
+        }
+        
+        if (weather.uvIndex >= 6.0f) {
+            list.add("☀️ 紫外線指數偏高（${weather.uvIndex}）：外出請注意防曬、配戴墨鏡，並定時補充水分。")
+        }
+        
+        if (weather.maxTemp - weather.minTemp >= 8) {
+            list.add("🌡️ 溫差較大（達 ${weather.maxTemp - weather.minTemp}°C）：早晚偏涼，請採取洋蔥式穿法。")
+        }
+        
+        if (weather.maxTemp >= 32) {
+            list.add("🥵 高溫警報（最高溫 ${weather.maxTemp}°C）：天氣炎熱，請嚴防中暑，多待在陰涼通風處。")
+        } else if (weather.minTemp <= 15) {
+            list.add("🥶 低溫注意（最低溫 ${weather.minTemp}°C）：天氣寒冷，請做好保暖禦寒修護。")
+        }
+        
+        if (weather.windSpeed >= 15f) {
+            list.add("💨 風力強勁（時速 ${weather.windSpeed} km/h）：風速較大，外出注意強風，小心掉落物。")
+        }
+        
+        if (list.isEmpty()) {
+            list.add("✨ 今日天氣狀況良好，適合外出走走！")
+        }
+        list
+    }
+    
+    val clothingRecommend = remember(weather) {
+        val avgTemp = (weather.maxTemp + weather.minTemp) / 2
+        val list = mutableListOf<String>()
+        
+        when {
+            avgTemp >= 28 -> {
+                list.add("👕 精選短袖 T-Shirt / 背心、短褲、涼鞋或透氣運動鞋。")
+                list.add("🕶️ 外出可加一邊薄防曬外套或戴遮陽帽。")
+                list.add("🧵 推薦材質：純棉、亞麻等吸濕排汗的涼爽布料。")
+            }
+            avgTemp in 22..27 -> {
+                list.add("👕 薄長袖、襯衫、短袖外搭薄款針織外套或防風外套。")
+                list.add("👖 搭配休閒長褲、牛仔褲與運動鞋。")
+                list.add("🧵 面對室內冷氣房，洋蔥式穿搭（短袖 + 卡迪根）是完美的選擇。")
+            }
+            avgTemp in 16..21 -> {
+                list.add("🧥 長袖衛衣、毛衣，或休閒西裝外套。")
+                list.add("🧣 風衣、夾克、中等厚度的外套，適合早晚加穿。")
+                list.add("👖 燈芯絨褲或稍微防風、偏厚的休閒長褲。")
+            }
+            else -> {
+                list.add("🧤 加厚毛衣、發熱衣作打底。")
+                list.add("🧥 大衣、羽絨外套、防風防雨衝鋒衣，提供完美的禦寒保暖。")
+                list.add("🧣 可搭配圍巾、手套或毛帽防止熱量流失。")
+            }
+        }
+        list
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isNight) AuroraMidnight else Color(0xFFF8FAFC))
+            .padding(24.dp)
+            .statusBarsPadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "天氣",
+                    tint = if (isNight) AuroraMint else Color(0xFF0F172A),
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "天氣小工具說明",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = if (isNight) Color.White else Color(0xFF0F172A)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "目前定位城市：${weather.locationName} (${weather.condition})",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
+            Text(
+                "今日氣溫：${weather.minTemp}°C ~ ${weather.maxTemp}°C  (體感 ${weather.apparentTemp}°C)",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
+            
+            Spacer(modifier = Modifier.height(28.dp))
+            
+            // Section: 今日注意
+            Text(
+                "• 今日注意",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFFF1F5F9)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    warnings.forEachIndexed { index, warning ->
+                        Text(
+                            warning,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isNight) Color.White else Color(0xFF334155)
+                        )
+                        if (index < warnings.size - 1) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(28.dp))
+            
+            // Section: 今日穿搭
+            Text(
+                "• 今日穿搭",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFFF1F5F9)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    clothingRecommend.forEachIndexed { index, recommendation ->
+                        Text(
+                            recommendation,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isNight) Color.White else Color(0xFF334155)
+                        )
+                        if (index < clothingRecommend.size - 1) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(100.dp))
+        }
+        
+        FloatingActionButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp).testTag("weather_detail_back_button"),
             containerColor = if (isNight) Color.White else AuroraMidnight,
             contentColor = if (isNight) Color.Black else Color.White,
             shape = RoundedCornerShape(16.dp)
@@ -1220,7 +1402,7 @@ fun NewsCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "今日重點新聞 ($displayedNewsCount 則)",
+                    "今日重點新聞",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
