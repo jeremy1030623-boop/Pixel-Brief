@@ -421,7 +421,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = "天氣",
+                    contentDescription = "天氣小工具",
                     tint = if (isNight) AuroraMint else Color(0xFF0F172A),
                     modifier = Modifier.size(32.dp)
                 )
@@ -448,9 +448,9 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
             
             Spacer(modifier = Modifier.height(28.dp))
             
-            // Section: 今日注意
+            // Section: 今日關注
             Text(
-                "• 今日注意",
+                "• 今日關注",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = if (isNight) AuroraMint else Color(0xFF0F172A)
@@ -483,7 +483,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
             
             // Section: 今日穿搭
             Text(
-                "• 今日穿搭",
+                "· 今日穿搭",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = if (isNight) AuroraMint else Color(0xFF0F172A)
