@@ -943,12 +943,11 @@ fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
     }
 
     return when {
-        condition.contains("雷") -> Color(0xFF4F46E5).copy(alpha = 0.45f) // Stormy: Intense Indigo
-        condition.contains("雨") -> Color(0xFF2563EB).copy(alpha = 0.45f) // Rainy: Royal Blue
-        condition.contains("雪") -> Color(0xFFF1F5F9).copy(alpha = 0.25f) // Snowy: Soft Slate
-        condition.contains("霧") -> Color(0xFF94A3B8).copy(alpha = 0.35f) // Foggy: Slate
-        condition.contains("陰") || condition.contains("多雲") -> Color(0xFF475569).copy(alpha = 0.45f) // Cloudy: Slate/Gray
-        else -> Color(0xFFF59E0B).copy(alpha = 0.35f) // Sunny: Amber/Gold
+        condition.contains("雷") -> Color(0xFF1B1838) // Stormy night: Deep celestial indigo purple
+        condition.contains("雨") -> Color(0xFF0D1C30) // Rainy night: Cool damp ocean dark navy
+        condition.contains("雪") -> Color(0xFF1E2633) // Snowy night: Soft frosted dark slate
+        condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> Color(0xFF151924) // Cloudy/Foggy night: Cohesive dark slate gray
+        else -> Color(0xFF121829) // Clear/Sunny night (晴朗): Elegant obsidian/celestial navy
     }
 }
 
@@ -969,6 +968,17 @@ fun GlassmorphicCard(
         modifier = finalModifier
             .fillMaxWidth()
             .clip(ExpressiveShape)
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.12f),
+                        Color.White.copy(alpha = 0.03f),
+                        Color.Transparent
+                    )
+                ),
+                shape = ExpressiveShape
+            )
     ) {
         // High-end frosted glass refraction simulation using smooth multi-gradient backing.
         // This is 100% safe from RenderThread crashes on virtualized GPUs while providing rich depth & non-solid translucency.
