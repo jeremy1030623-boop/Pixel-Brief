@@ -584,7 +584,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -617,7 +617,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -1134,83 +1134,17 @@ fun GlassmorphicCard(
         modifier
     }
 
-    val borderBrush = remember(borderColors) {
-        if (borderColors != null) {
-            Brush.verticalGradient(colors = borderColors)
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.12f),
-                    Color.White.copy(alpha = 0.03f),
-                    Color.Transparent
-                )
-            )
-        }
-    }
-
-    Box(
-        modifier = finalModifier
-            .fillMaxWidth()
-            .clip(ExpressiveShape)
-            .border(
-                width = if (borderColors != null) 1.5.dp else 1.dp,
-                brush = borderBrush,
-                shape = ExpressiveShape
-            )
+    Card(
+        modifier = finalModifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = containerColor
+        ),
+        shape = ExpressiveShape
     ) {
-        // High-end frosted glass refraction simulation with dynamic modern light-leaking ambient glow from top-right.
-        if (borderColors != null && borderColors.size >= 2) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                borderColors[0].copy(alpha = 0.15f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.08f),
-                            Color.White.copy(alpha = 0.02f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-        // Translucent background card with a modern, non-solid light-leaking gradient fill
-        Card(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.Transparent
-            ),
-            shape = ExpressiveShape
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                containerColor.copy(alpha = 0.55f),
-                                containerColor.copy(alpha = 0.35f),
-                                containerColor.copy(alpha = 0.45f)
-                            )
-                        )
-                    )
-            ) {
-                Column(content = content)
-            }
-        }
+            content = content
+        )
     }
 }
 
@@ -1262,8 +1196,7 @@ fun PremiumVisualSalon(
                 modifier = Modifier
                     .padding(horizontal = 8.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color.White.copy(alpha = 0.08f))
-                    .border(1.dp, activeTheme.accentColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                    .background(Color(0xFF151B26))
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Icon(
@@ -1312,16 +1245,7 @@ fun PremiumVisualSalon(
                     .width(135.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(
-                        if (isSmartActive) activeTheme.cardBg else Color.White.copy(alpha = 0.05f)
-                    )
-                    .border(
-                        width = if (isSmartActive) 2.dp else 1.dp,
-                        brush = if (isSmartActive) {
-                            Brush.linearGradient(listOf(activeTheme.accentColor, activeTheme.secondaryAccent))
-                        } else {
-                            Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.Transparent))
-                        },
-                        shape = RoundedCornerShape(20.dp)
+                        if (isSmartActive) activeTheme.cardBg else Color(0xFF151B26)
                     )
                     .clickable { onAutoThemeToggle(true) }
                     .padding(12.dp)
@@ -1372,16 +1296,7 @@ fun PremiumVisualSalon(
                         .width(135.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(
-                            if (isSelected) theme.cardBg else Color.White.copy(alpha = 0.05f)
-                        )
-                        .border(
-                            width = if (isSelected) 2.dp else 1.dp,
-                            brush = if (isSelected) {
-                                Brush.linearGradient(listOf(theme.accentColor, theme.secondaryAccent))
-                            } else {
-                                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.Transparent))
-                            },
-                            shape = RoundedCornerShape(20.dp)
+                            if (isSelected) theme.cardBg else Color(0xFF151B26)
                         )
                         .clickable { onThemeSelect(theme) }
                         .padding(12.dp)
