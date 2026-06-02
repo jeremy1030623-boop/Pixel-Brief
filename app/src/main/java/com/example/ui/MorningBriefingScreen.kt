@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +47,60 @@ import java.util.*
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.CircleShape
+
+enum class PremiumLayoutTheme(
+    val themeName: String,
+    val desc: String, 
+    val bgGradient: List<Color>,
+    val cardBg: Color,
+    val cardBorderGlowColors: List<Color>,
+    val accentColor: Color,
+    val secondaryAccent: Color,
+    val previewIcon: String
+) {
+    SLATE_AURORA(
+        "極致夜螢",
+        "深邃極夜彩螢綠",
+        listOf(Color(0xFF060B18), Color(0xFF0F1833), Color(0xFF1E1B4B), Color(0xFF03050C)),
+        Color(0xFF111728),
+        listOf(Color(0xFF34D399).copy(alpha = 0.25f), Color(0xFF818CF8).copy(alpha = 0.08f), Color.Transparent),
+        Color(0xFF34D399),
+        Color(0xFF818CF8),
+        "🌌"
+    ),
+    IMPERIAL_GOLD(
+        "帝國流金",
+        "皇家香檳熔岩金",
+        listOf(Color(0xFF1B1105), Color(0xFF2C1E0C), Color(0xFF201305), Color(0xFF0E0802)),
+        Color(0xFF251A0D),
+        listOf(Color(0xFFF59E0B).copy(alpha = 0.3f), Color(0xFFFCD34D).copy(alpha = 0.08f), Color.Transparent),
+        Color(0xFFF59E0B),
+        Color(0xFFFCD34D),
+        "👑"
+    ),
+    ARCTIC_MINT(
+        "冰川極光",
+        "冰川極光晨曦綠",
+        listOf(Color(0xFF021B1B), Color(0xFF082D2D), Color(0xFF0A1E29), Color(0xFF02070A)),
+        Color(0xFF0E2226),
+        listOf(Color(0xFF10B981).copy(alpha = 0.28f), Color(0xFF06B6D4).copy(alpha = 0.08f), Color.Transparent),
+        Color(0xFF10B981),
+        Color(0xFF06B6D4),
+        "❄️"
+    ),
+    TWILIGHT_PURPLE(
+        "賽博紫幽",
+        "霓虹粉紫迷幻境",
+        listOf(Color(0xFF0F051D), Color(0xFF1C093A), Color(0xFF0C0315), Color(0xFF05010B)),
+        Color(0xFF1D0E32),
+        listOf(Color(0xFFEC4899).copy(alpha = 0.3f), Color(0xFF8B5CF6).copy(alpha = 0.08f), Color.Transparent),
+        Color(0xFFEC4899),
+        Color(0xFF8B5CF6),
+        "🔮"
+    )
+}
 
 sealed class ScreenState {
     object Home : ScreenState()
@@ -73,7 +128,47 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val calendar = Calendar.getInstance()
     val hour = calendar.get(Calendar.HOUR_OF_DAY)
     val isNight = hour !in 6..18
-    val backgroundBrush = remember(weather.condition, isNight) { getBackgroundBrush(weather.condition, isNight) }
+    var isAutoTheme by remember { mutableStateOf(true) }
+    var activePremiumTheme by remember { mutableStateOf(PremiumLayoutTheme.SLATE_AURORA) }
+    
+    // 自動主題機制 (Auto-Theme based on Time & Weather)
+    LaunchedEffect(isAutoTheme, hour, weather.condition, isNight) {
+        if (isAutoTheme) {
+            val newTheme = when {
+                // 雨天系 (Cozy rain / moody twilight storm)
+                weather.condition in listOf("雷陣雨", "大雨", "局部陣雨", "短暫陣雨", "毛毛雨") -> {
+                    if (isNight) PremiumLayoutTheme.TWILIGHT_PURPLE else PremiumLayoutTheme.SLATE_AURORA
+                }
+                // 晴天系 (Glowing solar dawn / golden sunset)
+                weather.condition == "晴朗" -> {
+                    when {
+                        hour in 5..9 -> PremiumLayoutTheme.ARCTIC_MINT
+                        hour in 16..18 -> PremiumLayoutTheme.IMPERIAL_GOLD
+                        isNight -> PremiumLayoutTheme.TWILIGHT_PURPLE
+                        else -> PremiumLayoutTheme.IMPERIAL_GOLD
+                    }
+                }
+                // 陰雪霧多雲系 (Cozy soft overcast/snowy landscapes)
+                weather.condition in listOf("陰天", "多雲", "多雲時晴", "起霧", "降雪") -> {
+                    if (weather.condition == "降雪" || hour in 5..9) PremiumLayoutTheme.ARCTIC_MINT
+                    else PremiumLayoutTheme.SLATE_AURORA
+                }
+                // 預設時辰切換
+                else -> {
+                    when {
+                        hour in 22..23 || hour in 0..4 -> PremiumLayoutTheme.TWILIGHT_PURPLE // 深夜賽博
+                        hour in 5..9 -> PremiumLayoutTheme.ARCTIC_MINT // 清晨冰川
+                        hour in 16..18 -> PremiumLayoutTheme.IMPERIAL_GOLD // 黃昏流金
+                        isNight -> PremiumLayoutTheme.SLATE_AURORA // 一般夜晚
+                        else -> PremiumLayoutTheme.ARCTIC_MINT // 一般白天
+                    }
+                }
+            }
+            activePremiumTheme = newTheme
+        }
+    }
+
+    val backgroundBrush = remember(activePremiumTheme) { Brush.verticalGradient(activePremiumTheme.bgGradient) }
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -132,6 +227,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     
     LaunchedEffect(Unit) {
         visible = true
+        // 自動定位：若尚未授權，啟動時自動詢問定位權限
+        if (!locationPermissionGranted.value) {
+            checkAndRequestLocationPermission()
+        }
     }
 
     Box(
@@ -139,6 +238,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             .fillMaxSize()
             .background(brush = backgroundBrush)
     ) {
+        // Dynamic, high-fidelity atmosphere overlay reflecting current weather
+        WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
+
         val currentNewsItem = selectedNewsItem
         val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen) {
             when {
@@ -201,6 +303,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 avatarGradientIndex = userSettings?.avatarGradientIndex ?: 0,
                                 greeting = timeState.greeting,
                                 time = timeState.time,
+                                secondaryMessage = timeState.secondaryMessage,
+                                isInteraction = timeState.isInteraction,
                                 weather = weather,
                                 events = events,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
@@ -219,7 +323,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 },
                                 onRefreshLocation = {
                                     if (locationPermissionGranted.value) {
-                                        viewModel.fetchData()
+                                        viewModel.fetchData(isManual = true)
                                     } else {
                                         checkAndRequestLocationPermission()
                                     }
@@ -227,13 +331,31 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             )
                         }
                         
-                        Spacer(modifier = Modifier.height(32.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        AnimatedVisibility(
+                            visible = visible,
+                            enter = fadeIn() + expandVertically()
+                        ) {
+                            PremiumVisualSalon(
+                                activeTheme = activePremiumTheme,
+                                onThemeSelect = { 
+                                    activePremiumTheme = it
+                                    isAutoTheme = false // 手動點選時關閉自動同步以鎖定使用者喜好
+                                },
+                                weatherCondition = weather.condition,
+                                isAutoTheme = isAutoTheme,
+                                onAutoThemeToggle = { isAutoTheme = it }
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
                         
                         AnimatedVisibility(
                             visible = visible,
                             enter = fadeIn(animationSpec = spring()) + slideInVertically { it / 2 }
                         ) {
-                            AgendaSection(events, weather.condition, isNight) {
+                            AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
                                 checkAndRequestCalendarPermission()
                             }
                         }
@@ -257,6 +379,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
                                 newsMode = userSettings?.newsMode ?: "local",
                                 isNight = isNight,
+                                activeTheme = activePremiumTheme,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestCalendarPermission() },
@@ -577,6 +700,8 @@ fun GreetingSection(
     avatarGradientIndex: Int,
     time: String,
     greeting: String,
+    secondaryMessage: String,
+    isInteraction: Boolean,
     weather: WeatherInfo,
     events: List<com.example.data.CalendarEvent>,
     weatherUnit: String,
@@ -809,10 +934,53 @@ fun GreetingSection(
                         modifier = Modifier.size(16.dp)
                     )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Crossfade(
+                    targetState = secondaryMessage,
+                    label = "greeting_secondary"
+                ) { targetMsg ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        val (icon, tint) = if (isInteraction) {
+                            Pair(Icons.Default.AutoAwesome, AuroraMint)
+                        } else {
+                            if (isNight) {
+                                Pair(Icons.Default.Bedtime, Color(0xFFC084FC)) // Soft lavender purple moon
+                            } else {
+                                Pair(Icons.Default.WbSunny, Color(0xFFFBBF24)) // Radiant golden gold sun
+                            }
+                        }
+                        
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = "氣氛圖示",
+                            tint = tint,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        
+                        Text(
+                            text = targetMsg,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = if (isInteraction) FontWeight.SemiBold else FontWeight.Normal,
+                                letterSpacing = 0.2.sp
+                            ),
+                            color = if (isInteraction) tint else {
+                                if (isNight) Color.White.copy(alpha = 0.75f) else Color(0xFF475569)
+                            },
+                            maxLines = 2
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "點擊或長按頭像以自訂大頭像與名稱",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF1E293B).copy(alpha = 0.5f)
+                    text = "（自訂：點擊或長按頭像即可自訂專屬名稱與頭像 ✨）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isNight) Color.White.copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.35f),
+                    fontSize = 10.sp
                 )
             }
         }
@@ -955,6 +1123,8 @@ fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
 fun GlassmorphicCard(
     modifier: Modifier = Modifier,
     containerColor: Color,
+    borderColors: List<Color>? = null,
+    glowColor: Color = Color.Transparent,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -964,24 +1134,46 @@ fun GlassmorphicCard(
         modifier
     }
 
+    val borderBrush = remember(borderColors) {
+        if (borderColors != null) {
+            Brush.verticalGradient(colors = borderColors)
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.12f),
+                    Color.White.copy(alpha = 0.03f),
+                    Color.Transparent
+                )
+            )
+        }
+    }
+
     Box(
         modifier = finalModifier
             .fillMaxWidth()
             .clip(ExpressiveShape)
             .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.12f),
-                        Color.White.copy(alpha = 0.03f),
-                        Color.Transparent
-                    )
-                ),
+                width = if (borderColors != null) 1.5.dp else 1.dp,
+                brush = borderBrush,
                 shape = ExpressiveShape
             )
     ) {
-        // High-end frosted glass refraction simulation using smooth multi-gradient backing.
-        // This is 100% safe from RenderThread crashes on virtualized GPUs while providing rich depth & non-solid translucency.
+        // High-end frosted glass refraction simulation with dynamic modern light-leaking ambient glow from top-right.
+        if (borderColors != null && borderColors.size >= 2) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                borderColors[0].copy(alpha = 0.15f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -1023,11 +1215,226 @@ fun GlassmorphicCard(
 }
 
 @Composable
-fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, isNight: Boolean, onAuthorize: () -> Unit) {
+fun PremiumVisualSalon(
+    activeTheme: PremiumLayoutTheme,
+    onThemeSelect: (PremiumLayoutTheme) -> Unit,
+    weatherCondition: String = "",
+    isAutoTheme: Boolean = true,
+    onAutoThemeToggle: (Boolean) -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(activeTheme.accentColor)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "極致視覺版式與奢華光影沙龍",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "DESIGN PRO",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Black,
+                color = activeTheme.accentColor.copy(alpha = 0.8f),
+                letterSpacing = 1.5.sp
+            )
+        }
+        
+        if (weatherCondition.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(horizontal = 8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, activeTheme.accentColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = activeTheme.accentColor,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isAutoTheme) {
+                        "氣候感知同步：當前大氣呈現［${weatherCondition}］光影，已自動適配奢華底色"
+                    } else {
+                        "智慧感測已暫停：現正鎖定手動常駐主題。點擊左側「智慧氣候感應」可開啟全天候光合自適配"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.75f)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        val themes = remember { PremiumLayoutTheme.values() }
+        val presetsScrollState = rememberScrollState()
+
+        // Horizontal grid/row of visual presets
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(presetsScrollState),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // 1. 環境智慧感應 (Smart Weather Auto-Theme Card)
+            val isSmartActive = isAutoTheme
+            val smartEmoji = when {
+                weatherCondition.contains("雨") -> "🌧️"
+                weatherCondition.contains("雪") -> "❄️"
+                weatherCondition.contains("霧") -> "🌫️"
+                weatherCondition == "晴朗" -> "☀️"
+                else -> "✨"
+            }
+            
+            Box(
+                modifier = Modifier
+                    .width(135.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        if (isSmartActive) activeTheme.cardBg else Color.White.copy(alpha = 0.05f)
+                    )
+                    .border(
+                        width = if (isSmartActive) 2.dp else 1.dp,
+                        brush = if (isSmartActive) {
+                            Brush.linearGradient(listOf(activeTheme.accentColor, activeTheme.secondaryAccent))
+                        } else {
+                            Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.Transparent))
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                    .clickable { onAutoThemeToggle(true) }
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = smartEmoji,
+                            fontSize = 18.sp
+                        )
+                        if (isSmartActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(activeTheme.accentColor)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "智慧氣候感應",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSmartActive) Color.White else Color.White.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "自適配：${weatherCondition.ifEmpty { "感測中" }}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSmartActive) activeTheme.accentColor.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.4f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // 2. Specific Theme Cards
+            themes.forEach { theme ->
+                val isSelected = !isAutoTheme && theme == activeTheme
+                
+                Box(
+                    modifier = Modifier
+                        .width(135.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isSelected) theme.cardBg else Color.White.copy(alpha = 0.05f)
+                        )
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            brush = if (isSelected) {
+                                Brush.linearGradient(listOf(theme.accentColor, theme.secondaryAccent))
+                            } else {
+                                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.1f), Color.Transparent))
+                            },
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clickable { onThemeSelect(theme) }
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = theme.previewIcon,
+                                fontSize = 18.sp
+                            )
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(theme.accentColor)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = theme.themeName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = theme.desc,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) theme.accentColor.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.4f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, isNight: Boolean, activeTheme: PremiumLayoutTheme, onAuthorize: () -> Unit) {
     GlassmorphicCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onAuthorize,
-        containerColor = getCardBackgroundColor(condition, isNight)
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -1094,6 +1501,7 @@ fun WidgetGrid(
     displayedNewsCount: Int,
     newsMode: String,
     isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
@@ -1108,12 +1516,14 @@ fun WidgetGrid(
                 condition = weather.condition,
                 lastSyncTime = lastSyncTime,
                 isNight = isNight,
+                activeTheme = activeTheme,
                 onReSync = onSync
             )
         } else {
             SyncHealthReminderCard(
                 condition = weather.condition,
                 isNight = isNight,
+                activeTheme = activeTheme,
                 onSync = onSync
             )
         }
@@ -1122,6 +1532,7 @@ fun WidgetGrid(
             condition = weather.condition,
             weatherUnit = weatherUnit,
             isNight = isNight,
+            activeTheme = activeTheme,
             onWeatherClick = onWeatherClick
         )
         NewsCard(
@@ -1130,6 +1541,7 @@ fun WidgetGrid(
             displayedNewsCount = displayedNewsCount,
             newsMode = newsMode,
             isNight = isNight,
+            activeTheme = activeTheme,
             onNewsModeChange = onNewsModeChange,
             onItemClick = onNewsClick
         )
@@ -1140,6 +1552,7 @@ fun WidgetGrid(
 fun SyncHealthReminderCard(
     condition: String,
     isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
     onSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1149,7 +1562,9 @@ fun SyncHealthReminderCard(
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = getCardBackgroundColor(condition, isNight)
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()
@@ -1161,13 +1576,13 @@ fun SyncHealthReminderCard(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF59E0B)),
+                        .background(activeTheme.accentColor),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.HealthAndSafety,
                         contentDescription = "Sync Health Reminder",
-                        tint = Color.White,
+                        tint = AuroraMidnight,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -1203,8 +1618,8 @@ fun SyncHealthReminderCard(
                 },
                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sync_health_button"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFF59E0B),
-                    contentColor = Color.White
+                    containerColor = activeTheme.accentColor,
+                    contentColor = AuroraMidnight
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -1232,6 +1647,7 @@ fun SleepCard(
     condition: String,
     lastSyncTime: String,
     isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
     onReSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1239,11 +1655,11 @@ fun SleepCard(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val cardBg = getCardBackgroundColor(condition, isNight)
-
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = cardBg
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(
@@ -1256,13 +1672,13 @@ fun SleepCard(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF2563EB)),
+                            .background(activeTheme.accentColor),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.Bedtime,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = AuroraMidnight,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -1323,7 +1739,7 @@ fun SleepCard(
                     icon = Icons.Default.Bedtime,
                     label = "睡眠時數",
                     value = "${sleep.hours.toInt()}h",
-                    tint = Color(0xFF818CF8)
+                    tint = activeTheme.accentColor
                 )
             }
         }
@@ -1355,13 +1771,16 @@ fun WeatherCard(
     condition: String,
     weatherUnit: String,
     isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     GlassmorphicCard(
         modifier = modifier,
         onClick = onWeatherClick,
-        containerColor = getCardBackgroundColor(condition, isNight)
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
     ) {
         Row(
             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -1398,12 +1817,15 @@ fun NewsCard(
     displayedNewsCount: Int,
     newsMode: String,
     isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
     GlassmorphicCard(
         modifier = Modifier,
-        containerColor = getCardBackgroundColor(condition, isNight)
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(
@@ -2256,6 +2678,189 @@ fun SettingsRow(
             onCheckedChange = onCheckedChange,
             modifier = Modifier.testTag(testTag)
         )
+    }
+}
+
+@Composable
+fun WeatherAtmosphereOverlay(
+    condition: String,
+    isNight: Boolean
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "weather_anim")
+    
+    when (condition) {
+        "雷陣雨", "大雨", "局部陣雨", "短暫陣雨", "毛毛雨" -> {
+            // Animated Rain Drops & Glass Ripple Rings
+            val fallProgress by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1500, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "rain_fall"
+            )
+            
+            val rippleScale by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(2200, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "ripple_expand"
+            )
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+                if (width <= 0 || height <= 0) return@Canvas
+                
+                // Draw slanted rain needles
+                val rainCount = 20
+                for (i in 0 until rainCount) {
+                    val xSeed = (i * 137.5f) % width
+                    val ySeed = (i * 243.7f) % height
+                    
+                    val currentY = (ySeed + fallProgress * height) % height
+                    val currentX = (xSeed + fallProgress * 150f) % width
+                    
+                    drawLine(
+                        color = Color(0x1E818CF8),
+                        start = androidx.compose.ui.geometry.Offset(currentX, currentY),
+                        end = androidx.compose.ui.geometry.Offset(currentX + 10f, currentY + 30f),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+                }
+                
+                // Draw dynamic splash ripples on simulated surface glass
+                val splashPoints = listOf(
+                    androidx.compose.ui.geometry.Offset(width * 0.25f, height * 0.45f),
+                    androidx.compose.ui.geometry.Offset(width * 0.75f, height * 0.25f),
+                    androidx.compose.ui.geometry.Offset(width * 0.5f, height * 0.75f)
+                )
+                
+                splashPoints.forEachIndexed { index, point ->
+                    val progress = (rippleScale + index * 0.33f) % 1f
+                    val alpha = (1f - progress) * 0.12f
+                    val radius = progress * 50.dp.toPx()
+                    
+                    drawCircle(
+                        color = Color(0xFFC084FC).copy(alpha = alpha),
+                        radius = radius,
+                        center = point,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
+                    )
+                }
+            }
+        }
+        "晴朗" -> {
+            // Elegant pulsing light rays (Sun beams) from top-right
+            val sunGlow by infiniteTransition.animateFloat(
+                initialValue = 0.12f,
+                targetValue = 0.25f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(4000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "sunny_glow"
+            )
+            
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+                if (width <= 0 || height <= 0) return@Canvas
+                
+                // Pulsing solar source at top right
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFBBF24).copy(alpha = sunGlow),
+                            Color(0xFFFCD34D).copy(alpha = sunGlow * 0.3f),
+                            Color.Transparent
+                        ),
+                        center = androidx.compose.ui.geometry.Offset(width, 0f),
+                        radius = width * 0.9f
+                    ),
+                    radius = width * 0.9f,
+                    center = androidx.compose.ui.geometry.Offset(width, 0f)
+                )
+            }
+        }
+        "陰天", "多雲", "多雲時晴", "起霧" -> {
+            // Drifting mist cloud particles
+            val driftProgress by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(28000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "mist_drift"
+            )
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+                if (width <= 0 || height <= 0) return@Canvas
+                
+                val cloudCount = 3
+                for (i in 0 until cloudCount) {
+                    val basePercentY = 0.2f + i * 0.25f
+                    val x = ((driftProgress + i.toFloat() * 0.33f) % 1f) * (width + 300.dp.toPx()) - 150.dp.toPx()
+                    val radius = (100 + 35 * i).dp.toPx()
+                    
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.03f),
+                                Color.White.copy(alpha = 0.01f),
+                                Color.Transparent
+                            ),
+                            center = androidx.compose.ui.geometry.Offset(x, height * basePercentY),
+                            radius = radius
+                        ),
+                        radius = radius,
+                        center = androidx.compose.ui.geometry.Offset(x, height * basePercentY)
+                    )
+                }
+            }
+        }
+        "降雪" -> {
+            // Elegant fluttering snow
+            val snowFall by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(6000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "snow_fall"
+            )
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+                if (width <= 0 || height <= 0) return@Canvas
+                
+                val flakeCount = 15
+                for (i in 0 until flakeCount) {
+                    val xSeed = (i * 153.3f) % width
+                    val ySeed = (i * 261.2f) % height
+                    
+                    val currentY = (ySeed + snowFall * height) % height
+                    // side sway using a sine curve
+                    val sway = kotlin.math.sin(snowFall * 3.14159f * 2f + i.toFloat()) * 15.dp.toPx()
+                    val currentX = (xSeed + sway) % width
+                    
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.25f),
+                        radius = (2.dp + (i % 3).dp).toPx(),
+                        center = androidx.compose.ui.geometry.Offset(currentX, currentY)
+                    )
+                }
+            }
+        }
     }
 }
 

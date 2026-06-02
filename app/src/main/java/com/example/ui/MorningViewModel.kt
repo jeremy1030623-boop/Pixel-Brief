@@ -89,10 +89,15 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
-    data class TimeState(val time: String, val greeting: String)
+    data class TimeState(
+        val time: String,
+        val greeting: String,
+        val secondaryMessage: String = "為您開啟頂奢質感的清晨簡報沙龍",
+        val isInteraction: Boolean = false
+    )
 
-    private val _timeState = MutableStateFlow(TimeState("", "Good morning,"))
-    val timeState = _timeState.asStateFlow()
+    private val _interactionMessage = MutableStateFlow<String?>(null)
+    val interactionMessage = _interactionMessage.asStateFlow()
 
     private val _currentTimeFlow = flow {
         while (true) {
@@ -117,6 +122,47 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             delay(60000)
         }
     }.flowOn(Dispatchers.Default)
+
+    private fun getSecondaryMessageForHour(hour: Int): String {
+        return when (hour) {
+            in 5..8 -> "早安晨光！早晨喝杯溫水有助於啟動消化，今天也要元氣滿滿 🌱"
+            in 9..11 -> "腦力黃金時刻！當前專注力最高，快來消滅今天最重要的難關吧 🔥"
+            in 12..13 -> "午餐時間到了！希望你今天享用了美味午餐，記得稍微走動伸展一下 🍱"
+            in 14..17 -> "午後充電中！如果感到些微瞌睡，伸個大懶腰，為下半場注滿高能活力 ⚡️"
+            in 18..20 -> "忙碌了一天辛苦啦！現在放慢節奏，享受愜意的個人時光或美味晚餐 🌌"
+            in 21..23 -> "悠閒的深夜時光。建議放開公事、調暗燈光，預備香甜高品質的美夢 💤"
+            else -> "深夜探險家 🦉！夜深人靜思緒靈敏，但也別忘了優質睡眠是最好的充能器哦"
+        }
+    }
+
+    val timeState: StateFlow<TimeState> = combine(_currentTimeFlow, _interactionMessage) { (time, greeting), interactionMsg ->
+        val calendar = Calendar.getInstance()
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val defaultSec = getSecondaryMessageForHour(hour)
+        if (interactionMsg != null) {
+            TimeState(
+                time = time,
+                greeting = greeting,
+                secondaryMessage = interactionMsg,
+                isInteraction = true
+            )
+        } else {
+            TimeState(
+                time = time,
+                greeting = greeting,
+                secondaryMessage = defaultSec,
+                isInteraction = false
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TimeState("", "Good morning,"))
+
+    fun triggerInteractionFeedback(message: String) {
+        viewModelScope.launch {
+            _interactionMessage.value = message
+            delay(12000) // Keep the feedback line active for 12 seconds
+            _interactionMessage.value = null
+        }
+    }
 
     val username = _userSettings.map { it?.username ?: "Jeremy" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Jeremy")
@@ -144,15 +190,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         
-        viewModelScope.launch {
-            try {
-                _currentTimeFlow.collect { (time, greeting) ->
-                    _timeState.value = TimeState(time, greeting)
-                }
-            } catch (e: Throwable) {
-                android.util.Log.e("MorningViewModel", "Exception collect _currentTimeFlow", e)
-            }
-        }
+        // timeState is now fully reactive and handled via combine flow
         
         viewModelScope.launch {
             try {
@@ -250,6 +288,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     sleepSyncDurationMs = syncDuration
                 )
                 getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)
+                triggerInteractionFeedback("健康狀態雲端同步成功！已為您備好專屬的深度健康生活綜合報告 📈")
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during syncHealthData", e)
             }
@@ -292,6 +331,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     lastSyncTime = ""
                 )
                 getDb()?.userSettingsDao()?.saveUserSettings(updatedSettings)
+                triggerInteractionFeedback("睡眠記錄已重置！期待今晚為您捕捉更放鬆美妙的入夢節奏 💤")
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during clearSleepData", e)
             }
@@ -303,7 +343,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             try {
                 getDb()?.userSettingsDao()?.saveUserSettings(settings)
                 android.util.Log.d("MorningViewModel", "User settings updated, reloading data actively...")
-                fetchData()
+                fetchData(isManual = false)
+                triggerInteractionFeedback("個人檔案客製調整成功！新頭像、配色與主題已無縫融入奢華版面 👑")
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during updateUserSettings", e)
             }
@@ -326,7 +367,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun fetchData() {
+    fun fetchData(isManual: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
@@ -426,6 +467,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
                 // Fetch News using Gemini with FRESH weather data
                 fetchNews(newWeather)
+                if (isManual) {
+                    triggerInteractionFeedback("當前定位與最新天氣數據同步成功！已為您備好最準確的出門參考 ☀️")
+                }
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Error inside fetchData", e)
             } finally {
