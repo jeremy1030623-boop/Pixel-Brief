@@ -38,17 +38,24 @@ val Typography = Typography(
     ),
     titleLarge = TextStyle(
         fontFamily = GoogleSansFontFamily,
-        fontWeight = FontWeight.Medium,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.5).sp
+    ),
+    titleMedium = TextStyle(
+        fontFamily = GoogleSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        lineHeight = 26.sp,
+        letterSpacing = (-0.2).sp
     ),
     bodyLarge = TextStyle(
         fontFamily = GoogleSansFontFamily,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.2.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = GoogleSansFontFamily,

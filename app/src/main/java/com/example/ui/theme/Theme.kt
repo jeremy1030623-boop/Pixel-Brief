@@ -21,6 +21,10 @@ private val DarkColorScheme =
         onSecondary = OnSecondaryDark,
         secondaryContainer = SecondaryContainerDark,
         onSecondaryContainer = OnSecondaryContainerDark,
+        tertiary = TertiaryDark,
+        onTertiary = OnTertiaryDark,
+        tertiaryContainer = TertiaryContainerDark,
+        onTertiaryContainer = OnTertiaryContainerDark,
         background = AuroraMidnight,
         surface = AuroraDeepIndigo,
         onBackground = Color.White,
@@ -37,6 +41,10 @@ private val LightColorScheme =
         onSecondary = OnSecondaryLight,
         secondaryContainer = SecondaryContainerLight,
         onSecondaryContainer = OnSecondaryContainerLight,
+        tertiary = TertiaryLight,
+        onTertiary = OnTertiaryLight,
+        tertiaryContainer = TertiaryContainerLight,
+        onTertiaryContainer = OnTertiaryContainerLight,
         background = Color(0xFFF8FAFC),
         surface = Color.White,
         onBackground = AuroraMidnight,
@@ -65,5 +73,5 @@ fun MyApplicationTheme(
       else -> LightColorScheme
     }
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  MaterialTheme(colorScheme = colorScheme, typography = Typography, shapes = M3EShapes, content = content)
 }

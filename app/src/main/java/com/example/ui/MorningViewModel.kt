@@ -11,7 +11,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.text.SimpleDateFormat
 import java.util.*
-
 import kotlinx.serialization.json.Json
 
 class MorningViewModel(application: Application) : AndroidViewModel(application) {
@@ -35,21 +34,100 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _userSettings = MutableStateFlow<UserSettings?>(null)
     val userSettings: StateFlow<UserSettings?> = _userSettings.asStateFlow()
 
+    private val _tasksList = MutableStateFlow<List<TaskItem>>(emptyList())
+    val tasksList = _tasksList.asStateFlow()
+
+    private val _recentSleepData = MutableStateFlow<List<SleepData>>(emptyList())
+    val recentSleepData = _recentSleepData.asStateFlow()
+
     init {
         android.util.Log.d("MorningViewModel", "ViewModel Initializing...")
         viewModelScope.launch {
             try {
                 val database = getDb()
                 if (database != null) {
-                    database.userSettingsDao().getUserSettings().collect { settings ->
-                        _userSettings.value = settings ?: UserSettings()
+                    launch {
+                        database.userSettingsDao().getUserSettings().collect { settings ->
+                            _userSettings.value = settings ?: UserSettings()
+                        }
+                    }
+                    launch {
+                        database.taskItemDao().getAllTasks().collect { tasks ->
+                            _tasksList.value = tasks
+                        }
+                    }
+                    launch {
+                        database.sleepDataDao().getRecentSleepData().collect { data ->
+                            _recentSleepData.value = data
+                        }
                     }
                 } else {
                     _userSettings.value = UserSettings()
                 }
             } catch (e: Throwable) {
-                 android.util.Log.e("MorningViewModel", "Error loading settings", e)
+                 android.util.Log.e("MorningViewModel", "Error loading settings, tasks or sleepData", e)
                  _userSettings.value = UserSettings()
+            }
+        }
+    }
+
+    fun addTask(text: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = getDb()
+                if (db != null) {
+                    db.taskItemDao().insertTask(TaskItem(text = text))
+                    triggerInteractionFeedback("成功新增重點任務：$text 🎯")
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "addTask failed", e)
+            }
+        }
+    }
+
+    fun toggleTask(task: TaskItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = getDb()
+                if (db != null) {
+                    val updated = task.copy(isCompleted = !task.isCompleted)
+                    db.taskItemDao().updateTask(updated)
+                    if (updated.isCompleted) {
+                        triggerInteractionFeedback("恭喜完成任務！繼續保持高效 🎉")
+                    } else {
+                        triggerInteractionFeedback("已重設任務狀態 ✏️")
+                    }
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "toggleTask failed", e)
+            }
+        }
+    }
+
+    fun deleteTask(task: TaskItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = getDb()
+                if (db != null) {
+                    db.taskItemDao().deleteTask(task)
+                    triggerInteractionFeedback("任務已刪除 🗑️")
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "deleteTask failed", e)
+            }
+        }
+    }
+
+    fun clearAllTasks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val db = getDb()
+                if (db != null) {
+                    db.taskItemDao().clearAllTasks()
+                    triggerInteractionFeedback("已清空所有待辦任務 ✨")
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "clearAllTasks failed", e)
             }
         }
     }
@@ -88,6 +166,17 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    private fun reportError(message: String) {
+        _errorMessage.value = message
+    }
 
     data class TimeState(
         val time: String,
@@ -174,13 +263,11 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     val funFact = _funFact.asStateFlow()
 
     init {
-        // fetchData is already setting up data on IO
         fetchData()
         
-        // Periodic update every 30 minutes
         viewModelScope.launch {
             while (true) {
-                delay(1800000L) // 30 minutes in milliseconds
+                delay(1800000L) // 30 minutes
                 try {
                     android.util.Log.d("MorningViewModel", "Periodic update triggered (every 30 mins)")
                     fetchData()
@@ -189,8 +276,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
-        
-        // timeState is now fully reactive and handled via combine flow
         
         viewModelScope.launch {
             try {
@@ -210,7 +295,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                         _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                         _healthInfo.value = HealthInfo()
                     }
-                    // Trigger suggestion update when sleep/health syncing changes
                     updateGoalSuggestions()
                 }
             } catch (e: Throwable) {
@@ -223,6 +307,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         _funFact.value = try {
             val context = getApplication<Application>().applicationContext
             com.example.api.GoogleGenAiClient.generateContent(context, "請提供一個有趣的冷知識，字數 50 字以內，繁體中文。")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
             "你知道嗎？每天適量喝水，能顯著提升專注力與新陳代謝。"
         }
@@ -240,6 +326,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val context = getApplication<Application>().applicationContext
             val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
             responseText.trim()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
              if (sleep.hours < 6f) {
                 "昨晚睡眠較少，今日請務必 prioritize 休息，減少高強度活動，並適時補充水分與小憩。"
@@ -273,7 +361,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                 val timeStr = sdf.format(Date())
                 
-                // Fetch Health Trend using Gemini
                 val trendReport = fetchHealthTrend(healthData)
 
                 val updatedSettings = currentSettings.copy(
@@ -297,21 +384,21 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun fetchHealthTrend(data: HealthConnectHelper.HealthData): String {
         val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請分析以下昨晚到今天的健康數據，並提供一段字數約 80-120 字的『深度健康生活綜合指導文字簡報』，包含具體的身體狀態評估、今日飲食與運動之科學建議，以及晨間開機的精神小叮嚀。請務必溫馨且充滿細節，直接返回簡報文字，不要有任何標題或外層引號。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}，打鼾 ${data.snoringMinutes} 分鐘，咳嗽 ${data.coughCount} 次），今日步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。"
-        // Prioritize gemini-nano for on-device AI Core experience
         val modelName = "gemini-nano" 
         
         return try {
             val context = getApplication<Application>().applicationContext
             val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
             responseText.trim()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
-            // Fallback trend report
             if (data.sleepHours > 7 && data.dailySteps > 8000) {
                 "【活力滿分】您昨晚的睡眠時數長達 ${data.sleepHours} 小時，深層睡眠品質卓越；搭配今日高達 ${data.dailySteps} 步的活躍步伐，您的心肺功能與代謝正處於極佳狀態。建議清晨多攝取高蛋白與富含維生素的膳食，維持一整天高能量釋放。今天非常適合進行戶外快走，讓充足陽光調節您的生理時鐘！"
             } else if (data.sleepHours < 6) {
                 "【溫馨守護】您昨晚的睡眠時數僅 ${data.sleepHours} 小時，身體開機稍顯疲憊，且心律偏高。今日建議在飲食中補充足夠的純水與複合性碳水化合物，保持體液平衡與專注。今天請避免挑戰極限強度的訓練，改為 15 分鐘的溫和拉伸與深呼吸，晚上提早入睡以極速修護元氣。"
             } else {
-                "【元氣平衡】今日您的各項健康指標整體表現平穩。睡眠時數達 ${data.sleepHours} 小時，心率穩定在 ${data.avgHeartRate} bpm。建議中午進行 10 分鐘的靜坐冥想或深呼吸，並在工作時每隔一小時起身活動，能大幅改善下半身循環。保持平和心境，迎接充實、健康而自信的一天！"
+                "【元氣平衡】今日您的各項健康指標整體表现平穩。睡眠時數達 ${data.sleepHours} 小時，心率穩定在 ${data.avgHeartRate} bpm。建議中午進行 10 分鐘的靜坐冥想或深呼吸，並在工作時每隔一小時起身活動，能大幅改善下半身循環。保持平和心境，迎接充實、健康而自信的一天！"
             }
         }
     }
@@ -371,20 +458,17 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
-                // Determine city name and coordinates
                 val location = locationHelper.getCurrentLocation()
                 val detected = getCityNameFromLocation(location)
                 val defaultCityOpt = _userSettings.value?.defaultCity ?: "台北"
                 val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultCityOpt
                 
-                // Get lat/lon: prioritize GPS location, fallback to mapped city coordinates
                 val (lat, lon) = if (location != null) {
                     Pair(location.latitude, location.longitude)
                 } else {
                     getCoordinatesForCity(finalCity)
                 }
                 
-                // Fetch real weather using System Cache first, fallback to Open-Meteo
                 val newWeather = try {
                     var systemWeather: WeatherInfo? = null
                     try {
@@ -446,7 +530,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 }
                 _weatherInfo.value = newWeather
 
-                // Read persistent sleep info from userSettings
                 val settings = _userSettings.value
                 if (settings != null && settings.isSleepSynced) {
                     _sleepInfo.value = SleepInfo(
@@ -458,20 +541,21 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                 }
 
-                // Fetch Calendar Events
                 try {
                     _nextEvents.value = calendarRepository.getNextEvents()
                 } catch (e: Throwable) {
                     android.util.Log.e("MorningViewModel", "Failed to fetch calendar events", e)
                 }
 
-                // Fetch News using Gemini with FRESH weather data
                 fetchNews(newWeather)
                 if (isManual) {
                     triggerInteractionFeedback("當前定位與最新天氣數據同步成功！已為您備好最準確的出門參考 ☀️")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Error inside fetchData", e)
+                reportError("無法取得最新資訊，請檢查網路連線")
             } finally {
                 _isRefreshing.value = false
             }
@@ -489,44 +573,39 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             city.contains("台中") || city.contains("臺中") -> Pair(24.1477, 120.6736)
             city.contains("台南") || city.contains("臺南") -> Pair(22.9908, 120.2133)
             city.contains("高雄") -> Pair(22.6273, 120.3014)
-            city.contains("基隆") -> Pair(25.1283, 121.7392)
             city.contains("新竹") -> Pair(24.8138, 120.9675)
-            city.contains("苗栗") -> Pair(24.5601, 120.8206)
-            city.contains("彰化") -> Pair(24.0517, 120.5161)
-            city.contains("南投") -> Pair(23.9155, 120.6860)
-            city.contains("雲林") -> Pair(23.7092, 120.4313)
+            city.contains("基隆") -> Pair(25.1283, 121.7419)
             city.contains("嘉義") -> Pair(23.4801, 120.4491)
-            city.contains("屏東") -> Pair(22.6660, 120.4859)
-            city.contains("宜蘭") -> Pair(24.7021, 121.7377)
-            city.contains("花蓮") -> Pair(23.9872, 121.6016)
+            city.contains("宜蘭") -> Pair(24.7570, 121.7530)
+            city.contains("花蓮") -> Pair(23.9871, 121.6016)
             city.contains("台東") || city.contains("臺東") -> Pair(22.7583, 121.1444)
-            city.contains("澎湖") -> Pair(23.5711, 119.5793)
-            city.contains("金門") -> Pair(24.4494, 118.3773)
-            city.contains("馬祖") -> Pair(26.1558, 119.9519)
-            else -> Pair(25.0330, 121.5654) // default to Taipei
+            else -> Pair(25.0330, 121.5654)
         }
     }
 
-    private fun getCityFromCoordinates(lat: Double, lon: Double): String {
-        return when {
-            lat in 24.95..25.25 && lon in 121.45..121.65 -> "台北"
-            lat in 24.85..25.10 && lon in 121.20..121.49 -> "新北"
-            lat in 24.90..25.15 && lon in 121.00..121.35 -> "桃園"
-            lat in 24.68..24.90 && lon in 120.90..121.15 -> "新竹"
-            lat in 24.30..24.60 && lon in 120.70..120.95 -> "苗栗"
-            lat in 24.05..24.35 && lon in 120.55..120.80 -> "台中"
-            lat in 23.95..24.15 && lon in 120.40..120.65 -> "彰化"
-            lat in 23.70..24.00 && lon in 120.65..121.10 -> "南投"
-            lat in 23.60..23.85 && lon in 120.15..120.55 -> "雲林"
-            lat in 23.35..23.60 && lon in 120.10..120.50 -> "嘉義"
-            lat in 22.85..23.25 && lon in 120.10..120.45 -> "台南"
-            lat in 22.45..22.85 && lon in 120.20..120.60 -> "高雄"
-            lat in 21.85..22.45 && lon in 120.35..120.90 -> "屏東"
-            lat in 24.40..24.99 && lon in 121.60..121.90 -> "宜蘭"
-            lat in 23.40..24.30 && lon in 121.25..121.65 -> "花蓮"
-            lat in 22.30..23.20 && lon in 120.75..121.20 -> "台東"
-            else -> "台灣"
+    private fun getCityFromCoordinates(latitude: Double, longitude: Double): String {
+        val cities = listOf(
+            "台北" to Pair(25.0330, 121.5654),
+            "台中" to Pair(24.1477, 120.6736),
+            "台南" to Pair(22.9908, 120.2133),
+            "高雄" to Pair(22.6273, 120.3014),
+            "新竹" to Pair(24.8138, 120.9675),
+            "基隆" to Pair(25.1283, 121.7419),
+            "嘉義" to Pair(23.4801, 120.4491),
+            "宜蘭" to Pair(24.7570, 121.7530),
+            "花蓮" to Pair(23.9871, 121.6016),
+            "台東" to Pair(22.7583, 121.1444)
+        )
+        var closestCity = "台北"
+        var minDistance = Double.MAX_VALUE
+        for ((city, coord) in cities) {
+            val dist = Math.hypot(latitude - coord.first, longitude - coord.second)
+            if (dist < minDistance) {
+                minDistance = dist
+                closestCity = city
+            }
         }
+        return closestCity
     }
 
     private fun getCityNameFromLocation(location: android.location.Location?): String {
@@ -534,7 +613,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         try {
             val context = getApplication<Application>().applicationContext
             if (android.location.Geocoder.isPresent()) {
-                val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
                 val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
                 val city = addresses?.firstOrNull()?.let {
                     it.adminArea ?: it.locality ?: it.subAdminArea
@@ -559,16 +638,27 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         _newsDetail.value = emptyList()
 
         val realNews = try {
-            if (newsMode == "international") {
-                locationText = "國際"
-                GoogleNewsFetcher.fetchInternationalNews()
-            } else {
-                val location = locationHelper.getCurrentLocation()
-                val detected = getCityNameFromLocation(location)
-                val defaultOpt = _userSettings.value?.defaultCity ?: "台北"
-                val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultOpt
-                locationText = finalCity
-                GoogleNewsFetcher.fetchNewsByLocation(finalCity)
+            when (newsMode) {
+                "international" -> {
+                    locationText = "國際"
+                    GoogleNewsFetcher.fetchInternationalNews()
+                }
+                "tech" -> {
+                    locationText = "科技"
+                    GoogleNewsFetcher.fetchTechNews()
+                }
+                "health" -> {
+                    locationText = "健康"
+                    GoogleNewsFetcher.fetchHealthNews()
+                }
+                else -> {
+                    val location = locationHelper.getCurrentLocation()
+                    val detected = getCityNameFromLocation(location)
+                    val defaultOpt = _userSettings.value?.defaultCity ?: "台北"
+                    val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultOpt
+                    locationText = finalCity
+                    GoogleNewsFetcher.fetchNewsByLocation(finalCity)
+                }
             }
         } catch (e: Throwable) {
             android.util.Log.e("MorningViewModel", "Failed to fetch real Google News via RSS", e)
@@ -579,28 +669,54 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             val headlines = realNews.mapIndexed { index, item ->
                 "${index + 1}. [標題] ${item.title} (媒體來源: ${item.source}, 網址: ${item.link})"
             }.joinToString("\n")
-            if (newsMode == "international") {
-                "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請詳細描寫脈絡，提供其對個人生活、科學保健或全球動態的具體啟示，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
-            } else {
-                "以下是今天真實採集到的 [$locationText] 地方與在地 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實新聞，精心挑選出 3 到 5 則與 [$locationText] 地方生活、交通、發展或周邊生活息息相關的在地重要話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請結合在地人的日常作息、防護、通勤或週末出行，深入拓展報導細節。並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+            when (newsMode) {
+                "international" -> {
+                    "以下是今天真實採集到的國際世界 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演高階 AI 早晨簡報助理，將以上真實國際新聞，精心挑選出 3 到 5 則最重要、最高水準且生活實用的世界政經或國際焦點話題。請為每一選取的焦點編輯一段親切、詳實、極具深度與溫度，且充滿整合指導價值的『早晨啟動文字簡報大摘要』（字數必須在 120 到 200 字之間）。請詳細描寫脈絡，提供其對個人生活、科學保健或全球動態的具體啟易，並務必在對應欄位填上該則新聞原本對應的 `url` (來源連結)。"
+                }
+                "tech" -> {
+                    "以下是今天真實採集到的科技創新領域 Google News 最新頭條與來源網址：\n$headlines\n\n請你扮演頂尖 AI 科技前沿大師，從上述熱門科技要聞中，挑選出 3 則最適合職場白領提升眼界、掌握未來趨勢或是應用於日常工作效率的焦點話題。請為每一點編輯出一款好讀易懂、富有洞察力、且實用性極佳的『數位科技晨報大摘要』（字數在 120 到 200 字之間）。詳細闡明其對個人技術實踐與未來的深刻啟示，並在 url 欄位附上原始連結。"
+                }
+                "health" -> {
+                    "以下是今天真實採集到的健康醫療、生活科學領域 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演頂尖 AI 身心健康科學顧問，從上述熱門要聞中精心挑選最適合現代城市忙碌工作者與生活大眾的 3 則黃金健康、抗炎、作息、飲食或睡眠焦點話題。請為每一焦點點位編輯一段極富科學實證指南、實操步驟清晰、且文字非常有親和力的『元氣健康晨報大摘要』（字數在 120 到 200 字之間）。詳細描寫成因與個人日常開機的具體實操，並在 url 欄位附上原始連結。"
+                }
+                else -> {
+                    "以下是今天真實採集到的 $locationText 在地生活、市政與社會 Google News 最新熱門頭條與其來源網址：\n$headlines\n\n請你扮演極具親和力與熱情的 AI 台灣在地生活指引大師，從上述熱門台灣在地或市政焦點中挑選出 3 到 5 則最重要、最貼近一般大眾衣食住行、週休旅遊、交通變更、公共安全或休閒生活的要聞。請為每一選取的焦點編輯一段極富親和力、詳實且充滿溫度的『在地生活大摘要』（字數在 120 到 200 字之間）。強烈建議語氣要非常貼近生活常理，附帶親切貼心的實作指引或外出防護提醒。別忘了在 url 欄位填入對應連結。"
+                }
             }
         } else {
-            if (newsMode == "international") {
-                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻充實、段落長度約 120 到 200 字的國際政經、世界脈動與科技健康新聞話題文字簡報，包含實用的行動指導建議，`url` 請留空）"
-            } else {
-                "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則與 [$locationText] 在地生活、地方交通與生活日常息息相關、溫馨正能量、段落長度約 120 到 200 字的焦點新聞話題文字簡報，給出極具生活實用乾貨與健康小訣竅，`url` 請留空）"
+            when (newsMode) {
+                "international" -> {
+                    "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則富有正向能量、精緻充實、段落長度約 120 到 200 字的國際政經、世界脈動與科技健康新聞話題文字簡報，包含實用的行動指導建議，`url` 請留空）"
+                }
+                "tech" -> {
+                    "（暫時無法取得真實 Google News RSS，請你為讀者精緻虛擬建構 3 則探討 AI 自動化、前沿電子科技、與端側運算之深度科技新聞簡報，描繪其對個體能力提升與日常辦公優化的乾貨，長度 120-200 字，`url` 留空）"
+                }
+                "health" -> {
+                    "（暫時無法取得真實 Google News RSS，請你為讀者精心生成 3 則基於最新睡眠醫學與自主神經調理的健康生活簡報，提供起床伸展、清晨補水與抗發炎餐食等精準指導建議，長度 120-200 字，`url` 留空）"
+                }
+                else -> {
+                    "（暫時無法取得真實 Google News RSS，請你直接為讀者虛擬生成 3 到 5 則與 [$locationText] 在地生活、地方交通與生活日常息息相關、溫馨正能量、段落長度約 120 到 200 字的焦點新聞話題文字簡報，給出極具生活實用乾貨與健康小訣竅，`url` 請留空）"
+                }
             }
         }
 
-        val isSunny = weather.condition.contains("晴") 
-        val isHot = weather.currentTemp > 28
-        val sunProtectionAdvice = if (isSunny && isHot) {
-            "\n！！特別提醒：今日天氣晴朗且溫度較高，曬太陽時間不宜過長，請務必加強防曬措施，攜帶遮陽傘帽，並多補充水分，避免中暑。"
-        } else {
-            "\n請務必讓其中一則簡報重點與今日天氣、穿著、紫外線防護或戶外活動建議深度呼應並給予極其溫馨的貼心指引。"
-        }
+        val prompt = """
+            你是一款兼具高超設計美學、台灣本土親和力，且能在清晨為大眾提供元氣加持的 AI 晨光秘書。
+            今天的使用者希望選取的早安簡報模式為：$locationText。
+            目前系統採集的在地位置/模式主要文字為：$locationText 的清晨更新。
+            目前室外的最新氣候資訊為：${weather.locationName}今日天氣${weather.condition}，室外溫度 ${weather.currentTemp}°C，體感溫度為 ${weather.apparentTemp}°C，濕度為 ${weather.humidity}%，紫外線指數為 ${weather.uvIndex}。
+            
+            $realNewsContext
+            
+            請你根據上方的上下文（若有真實採集到的新聞標題，請**百分之百只用真實標題進行精選與論述**，絕對不可憑空捏造無中生有的新聞標題或任意混淆網址），發揮你溫柔、熱情、充滿人文關懷與前沿科學思維的早晨助理精神。
+            若 realNewsContext 為空，或找不到相關焦點，則你只能在對應的模式（international/tech/health/local）下，生成 2-3 則能跟上述氣候資訊（溫度、戶外活動氣候等）以及模式主題（國際/科技/健康/在地生活）完美融合且充滿元氣、極度詳實的「精美原創好文與保健指引晨光要聞」。
+            
+            請確保輸出的 JSON 格式嚴格合法，不要包含任何 markdown 符記（如 ```json），只回傳純 JSON 陣列。
+            每一則陣列項目皆須包含三個欄位：title（新聞標題/焦點名稱）、summary（詳細大摘要文字，字數保持120-200字，乾貨滿滿、親切暖心）、url（原始新聞網址，如果是真實採集到的新聞請填入原網址，如果是無真實新聞 the fallback 生成，則填寫 "https://news.google.com"）。
+            
+            請立刻開始為使用者準備今日晨光簡報：
+        """.trimIndent()
 
-        val prompt = "$realNewsContext\n\n目前天氣環境資訊如下：\n目前天氣：${weather.condition}，氣溫 ${weather.currentTemp}°C (最高 ${weather.maxTemp}°C / 最低 ${weather.minTemp}°C)。$sunProtectionAdvice\n\n請以繁體中文（台灣）撰寫。請只返回 JSON 數組格式的字串，不要包含 ```json 或 ``` 標記，也不要有任何其他引導敘述文字，嚴格遵守以下範例格式：\n[{\"title\": \"焦點標題\", \"summary\": \"親切深入的早安大摘要文字，字數保持120-200字，乾貨滿滿...\", \"url\": \"該則新聞對應的原始/來源連結或空\"}, ...]"
         val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
         
         try {
@@ -610,6 +726,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)
             _newsDetail.value = news
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Throwable) {
             android.util.Log.e("MorningViewModel", "GoogleGenAiClient generation failed, attempting backup...", e)
             val apiKey = BuildConfig.GEMINI_API_KEY
@@ -626,6 +744,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val actualModel = when (modelName) {
                     "Gemini Flash Latest" -> "gemini-1.5-flash"
+                    "aicore" -> "gemini-1.5-flash"
                     else -> modelName
                 }
                 val response = RetrofitClient.service.generateContent(actualModel, apiKey, request)
@@ -634,6 +753,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 
                 val news = json.decodeFromString<List<NewsItem>>(cleanedJsonFallback)
                 _newsDetail.value = news
+            } catch (ex: kotlinx.coroutines.CancellationException) {
+                throw ex
             } catch (ex: Throwable) {
                 android.util.Log.e("MorningViewModel", "Retrofit generateContent failed, mapping real news...", ex)
                 _newsDetail.value = mapRealArticlesToNewsItems(realNews, newsMode)

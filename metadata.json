@@ -3,7 +3,11 @@
   "description": "AI 驅動的每日早晨簡報與小工具，採用 Material 3 Expressive 設計。",
   "requestFramePermissions": [
     "android.permission.READ_CALENDAR",
-    "android.permission.INTERNET"
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.POST_NOTIFICATIONS"
   ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

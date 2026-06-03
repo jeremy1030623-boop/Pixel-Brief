@@ -169,4 +169,31 @@ object GoogleNewsFetcher {
         }
         return list
     }
+
+    /**
+     * Fetches tech news.
+     */
+    suspend fun fetchTechNews(): List<NewsArticle> {
+        var list = fetchNewsFromUrl("https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
+        if (list.isEmpty()) {
+            Log.d("GoogleNewsFetcher", "Tech RSS empty; trying CNA tech fallback...")
+            list = fetchNewsFromUrl("https://www.cna.com.tw/rss/atech.aspx")
+        }
+        return list
+    }
+
+    /**
+     * Fetches health news.
+     */
+    suspend fun fetchHealthNews(): List<NewsArticle> {
+        var list = fetchNewsFromUrl("https://news.google.com/rss/headlines/section/topic/HEALTH?hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
+        if (list.isEmpty()) {
+            Log.d("GoogleNewsFetcher", "Health RSS empty; trying CNA wellness fallback...")
+            list = fetchNewsFromUrl("https://www.cna.com.tw/rss/aspt.aspx")
+        }
+        if (list.isEmpty()) {
+            list = fetchLatestTaiwanNews()
+        }
+        return list
+    }
 }

@@ -53,9 +53,53 @@ interface UserSettingsDao {
     suspend fun saveUserSettings(settings: UserSettings)
 }
 
-@Database(entities = [UserSettings::class], version = 8, exportSchema = false)
+@Entity(tableName = "task_items")
+data class TaskItem(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val text: String,
+    val isCompleted: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface TaskItemDao {
+    @Query("SELECT * FROM task_items ORDER BY timestamp DESC")
+    fun getAllTasks(): Flow<List<TaskItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTask(task: TaskItem)
+
+    @Update
+    suspend fun updateTask(task: TaskItem)
+
+    @Delete
+    suspend fun deleteTask(task: TaskItem)
+
+    @Query("DELETE FROM task_items")
+    suspend fun clearAllTasks()
+}
+
+@Entity(tableName = "sleep_data")
+data class SleepData(
+    @PrimaryKey val date: String, // YYYY-MM-DD
+    val durationHours: Float,
+    val sleepQuality: Int // 1-10
+)
+
+@Dao
+interface SleepDataDao {
+    @Query("SELECT * FROM sleep_data ORDER BY date DESC LIMIT 7")
+    fun getRecentSleepData(): Flow<List<SleepData>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSleepData(data: SleepData)
+}
+
+@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 10, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
+    abstract fun taskItemDao(): TaskItemDao
+    abstract fun sleepDataDao(): SleepDataDao
 
     companion object {
         @Volatile

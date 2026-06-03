@@ -121,6 +121,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val goalSuggestion by viewModel.goalSuggestion.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            snackbarHostState.showSnackbar(errorMessage!!)
+            viewModel.clearError()
+        }
+    }
 
     val isSleepSynced = userSettings?.isSleepSynced ?: false
     val lastSyncTime = userSettings?.lastSyncTime ?: ""
@@ -227,10 +236,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     
     LaunchedEffect(Unit) {
         visible = true
-        // 自動定位：若尚未授權，啟動時自動詢問定位權限
-        if (!locationPermissionGranted.value) {
-            checkAndRequestLocationPermission()
-        }
     }
 
     Box(
@@ -240,6 +245,11 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     ) {
         // Dynamic, high-fidelity atmosphere overlay reflecting current weather
         WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
         val currentNewsItem = selectedNewsItem
         val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen) {
@@ -295,7 +305,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         
                         AnimatedVisibility(
                             visible = visible,
-                            enter = fadeIn() + expandVertically()
+                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
                         ) {
                             GreetingSection(
                                 username = username,
@@ -320,13 +330,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                             avatarGradientIndex = newGradientIndex
                                         )
                                     )
-                                },
-                                onRefreshLocation = {
-                                    if (locationPermissionGranted.value) {
-                                        viewModel.fetchData(isManual = true)
-                                    } else {
-                                        checkAndRequestLocationPermission()
-                                    }
                                 }
                             )
                         }
@@ -335,7 +338,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         
                         AnimatedVisibility(
                             visible = visible,
-                            enter = fadeIn() + expandVertically()
+                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
                         ) {
                             PremiumVisualSalon(
                                 activeTheme = activePremiumTheme,
@@ -353,7 +356,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         
                         AnimatedVisibility(
                             visible = visible,
-                            enter = fadeIn(animationSpec = spring()) + slideInVertically { it / 2 }
+                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) { it / 2 }
                         ) {
                             AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
                                 checkAndRequestCalendarPermission()
@@ -364,9 +367,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         
                         AnimatedVisibility(
                             visible = visible,
-                            enter = fadeIn(animationSpec = spring()) + slideInVertically { it / 3 }
+                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) { it / 3 }
                         ) {
-                            WidgetGrid(
+                        WidgetGrid(
                                 sleepInfo = sleepInfo,
                                 weather = weather,
                                 events = events,
@@ -458,9 +461,9 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
         FloatingActionButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
-            containerColor = if (isNight) Color.White else AuroraMidnight,
-            contentColor = if (isNight) Color.Black else Color.White,
-            shape = RoundedCornerShape(16.dp)
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onTertiary,
+            shape = MaterialTheme.shapes.large
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
@@ -641,9 +644,9 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
         FloatingActionButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp).testTag("weather_detail_back_button"),
-            containerColor = if (isNight) Color.White else AuroraMidnight,
-            contentColor = if (isNight) Color.Black else Color.White,
-            shape = RoundedCornerShape(16.dp)
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onTertiary,
+            shape = MaterialTheme.shapes.large
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
@@ -708,8 +711,7 @@ fun GreetingSection(
     isNight: Boolean,
     goalSuggestion: String,
     isRefreshing: Boolean, onSettingsClick: () -> Unit,
-    onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit,
-    onRefreshLocation: () -> Unit
+    onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
 ) {
     var isEditingProfile by remember { mutableStateOf(false) }
     var tempName by remember { mutableStateOf(username) }
@@ -986,79 +988,8 @@ fun GreetingSection(
         }
         
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Interactive Location/Positioning Row
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Location Badge Info
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isNight) Color.White.copy(alpha = 0.12f) else Color(0xFF1E293B).copy(alpha = 0.08f))
-                    .clickable { if (!isRefreshing) onRefreshLocation() }
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "當前定位位置",
-                    tint = if (isNight) Color(0xFF818CF8) else Color(0xFF4F46E5),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (isRefreshing) "同步與定位更新中..." else "目前定位城市：${weather.locationName}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isNight) Color.White else Color(0xFF1E293B),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // Explicit Location Refresh button to satisfy user request "定位" perfectly
-            OutlinedButton(
-                onClick = { if (!isRefreshing) onRefreshLocation() },
-                modifier = Modifier
-                    .height(32.dp)
-                    .testTag("refresh_location_button"),
-                enabled = !isRefreshing,
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (isNight) Color.White.copy(alpha = 0.3f) else Color(0xFF1E293B).copy(alpha = 0.2f)
-                ),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = if (isNight) Color.White else Color(0xFF1E293B)
-                )
-            ) {
-                if (isRefreshing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = if (isNight) Color.White else Color(0xFF1E293B)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("同步中...", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "自動偵測重新定位",
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("重新定位", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        TimeGreetingText(time, eventText, weather, weatherUnit, onRefreshLocation, isNight, goalSuggestion)
+        TimeGreetingText(time, eventText, weather, weatherUnit, isNight, goalSuggestion)
     }
 }
 
@@ -1068,7 +999,6 @@ fun TimeGreetingText(
     eventText: String,
     weather: WeatherInfo,
     weatherUnit: String,
-    onRefreshLocation: () -> Unit,
     isNight: Boolean,
     goalSuggestion: String
 ) {
@@ -1139,7 +1069,7 @@ fun GlassmorphicCard(
         colors = CardDefaults.cardColors(
             containerColor = containerColor
         ),
-        shape = ExpressiveShape
+        shape = MaterialTheme.shapes.extraLarge
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -1269,21 +1199,6 @@ fun PremiumVisualSalon(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "智慧氣候感應",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSmartActive) Color.White else Color.White.copy(alpha = 0.7f)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "自適配：${weatherCondition.ifEmpty { "感測中" }}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSmartActive) activeTheme.accentColor.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.4f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
             }
 
@@ -1294,7 +1209,7 @@ fun PremiumVisualSalon(
                 Box(
                     modifier = Modifier
                         .width(135.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(
                             if (isSelected) theme.cardBg else Color(0xFF151B26)
                         )
@@ -1365,7 +1280,7 @@ fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: Strin
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             color = when {
                                 condition.contains("雨") -> Color(0xFF334155)
                                 condition.contains("多雲") -> Color(0xFF3F51B5)
@@ -1586,7 +1501,7 @@ fun SleepCard(
                     Box(
                         modifier = Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(activeTheme.accentColor),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1648,15 +1563,38 @@ fun SleepCard(
             Spacer(modifier = Modifier.height(20.dp))
             
             // Grid of sleep metrics
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 SleepMetricItem(
-                    modifier = Modifier.padding(horizontal = 16.dp),
                     icon = Icons.Default.Bedtime,
                     label = "睡眠時數",
-                    value = "${sleep.hours.toInt()}h",
+                    value = "${"%.1f".format(sleep.hours)}h",
                     tint = activeTheme.accentColor
                 )
+                SleepMetricItem(
+                    icon = Icons.Default.Air,
+                    label = "打鼾",
+                    value = "${sleep.snoringMinutes}m",
+                    tint = activeTheme.secondaryAccent
+                )
+                SleepMetricItem(
+                    icon = Icons.Default.Sick,
+                    label = "咳嗽",
+                    value = "${sleep.coughCount}次",
+                    tint = Color(0xFFF87171)
+                )
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "健康報告建議",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                "您的健康狀況分析與建議將顯示於此。",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.6f)
+            )
         }
     }
 }
@@ -2479,7 +2417,11 @@ fun SettingsScreen(
                         Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("gemini-1.5-flash" to "Gemini 1.5 Flash", "gemini-1.5-pro" to "Gemini 1.5 Pro").forEach { (code, label) ->
+                            listOf(
+                                "gemini-1.5-flash" to "1.5 Flash",
+                                "gemini-1.5-pro" to "1.5 Pro",
+                                "aicore" to "AICore"
+                            ).forEach { (code, label) ->
                                 val selected = editGeminiModelSelected == code
                                 Button(
                                     onClick = { editGeminiModelSelected = code },
@@ -2493,7 +2435,7 @@ fun SettingsScreen(
                                         .height(40.dp)
                                         .testTag("gemini_model_${code.replace(".", "_")}_button")
                                 ) {
-                                    Text(label, fontWeight = FontWeight.Bold)
+                                    Text(label, fontWeight = FontWeight.Bold, maxLines = 1)
                                 }
                             }
                         }
@@ -2545,7 +2487,7 @@ fun SettingsSectionCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(20.dp)
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()
