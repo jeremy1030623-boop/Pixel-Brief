@@ -43,6 +43,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import com.example.ui.theme.Typography
 import com.example.ui.theme.*
 import java.util.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextStyle
 
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -177,7 +187,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
-    val backgroundBrush = remember(activePremiumTheme) { Brush.verticalGradient(activePremiumTheme.bgGradient) }
+    val backgroundColor = remember(weather, isNight) { getWeatherSolidColor(weather, isNight) }
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -241,7 +251,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(brush = backgroundBrush)
+            .background(color = backgroundColor)
     ) {
         // Dynamic, high-fidelity atmosphere overlay reflecting current weather
         WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
@@ -281,7 +291,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     }
                 }
                 is ScreenState.WeatherDetail -> {
-                    WeatherDetailScreen(weather, isNight) {
+                    WeatherDetailScreen(weather, isNight, userSettings?.weatherUnit ?: "C") {
                         isWeatherDetailOpen = false
                     }
                 }
@@ -392,7 +402,6 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isNight) AuroraMidnight else Color(0xFFF8FAFC))
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -453,7 +462,29 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
 }
 
 @Composable
-fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Unit) {
+fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: String = "C", onBack: () -> Unit) {
+    val hourlyData = remember(weather) {
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val list = mutableListOf<Pair<String, Int>>()
+        for (i in 0..11) {
+            val h = (currentHour + i) % 24
+            val timeStr = String.format("%02d:00", h)
+            val angle = (h - 15) * Math.PI / 12
+            val range = (weather.maxTemp - weather.minTemp).coerceAtLeast(4)
+            val mid = (weather.maxTemp + weather.minTemp) / 2.0
+            val modelTemp = (mid + Math.cos(angle) * (range / 2.0)).toInt()
+            
+            val temp = if (i == 0) {
+                weather.currentTemp
+            } else {
+                val alpha = (i / 11.0).toFloat().coerceIn(0f, 1f)
+                (weather.currentTemp * (1f - alpha) + modelTemp * alpha).toInt()
+            }
+            list.add(timeStr to temp)
+        }
+        list
+    }
+
     val warnings = remember(weather) {
         val list = mutableListOf<String>()
         if (weather.precipitationProb >= 50) {
@@ -518,7 +549,6 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isNight) AuroraMidnight else Color(0xFFF8FAFC))
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -553,6 +583,35 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, onBack: () -> Un
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
             )
+            
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Section: Temperature Trend (Next 12 Hours)
+            Text(
+                "• 氣溫趨勢 (未來 12 小時)",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    TemperatureTrendLineChart(
+                        data = hourlyData,
+                        weatherUnit = weatherUnit,
+                        isDark = isNight,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
             
             Spacer(modifier = Modifier.height(28.dp))
             
@@ -1568,6 +1627,123 @@ fun NewsCard(
     }
 }
 
+fun getWeatherSolidColor(weather: WeatherInfo, isNight: Boolean): Color {
+    // 1. Initial base color selection based on weather condition
+    val baseColor = if (isNight) {
+        when {
+            weather.condition.contains("雷") -> Color(0xFF0E0E1B) // Deep stormy indigo
+            weather.condition.contains("雨") -> Color(0xFF0A111E) // Deep rainy navy
+            weather.condition.contains("雪") -> Color(0xFF131B26) // Icy midnight slate
+            weather.condition.contains("霧") || weather.condition.contains("陰") -> Color(0xFF0E1117) // Darkest overcast slate
+            weather.condition.contains("多雲") -> Color(0xFF0D111D) // Multi-cloud midnight
+            weather.condition == "晴朗" -> Color(0xFF070C18) // Absolute deep celestial navy
+            else -> Color(0xFF0B0F19) // Elegant midnight black
+        }
+    } else {
+        when {
+            weather.condition.contains("雷") -> Color(0xFFD1D5DB) // Soft slate grey
+            weather.condition.contains("雨") -> Color(0xFFE4E9F2) // Rainy light-blue-grey
+            weather.condition.contains("雪") -> Color(0xFFFFFFFF) // Pristine winter white
+            weather.condition.contains("霧") || weather.condition.contains("陰") -> Color(0xFFE2E8F0) // Mist/Overcast zinc
+            weather.condition.contains("多雲") -> Color(0xFFEFF4FC) // Airy light grey-blue
+            weather.condition == "晴朗" -> Color(0xFFFFF7ED) // Vibrant sunny peach white
+            else -> Color(0xFFF8FAFC) // Minimal slate white
+        }
+    }
+
+    // Convert to float color components for precise mathematical adjustment
+    var r = baseColor.red
+    var g = baseColor.green
+    var b = baseColor.blue
+
+    // 2. Adjust for Temperature (currentTemp: typically 0 to 45)
+    // Cold: increase blue/cyan. Hot: increase red/yellow.
+    val tempNormalized = ((weather.currentTemp - 15f) / 25f).coerceIn(-1.0f, 1.0f) // -1 is icy, +1 is hot
+    if (tempNormalized > 0) {
+        // Warm/Hot: subtle shift towards amber/red (more red, less blue)
+        if (isNight) {
+            r += tempNormalized * 0.04f
+            b -= tempNormalized * 0.02f
+        } else {
+            r += tempNormalized * 0.03f
+            g += tempNormalized * 0.015f
+            b -= tempNormalized * 0.03f
+        }
+    } else {
+        // Cold/Freezing: shift towards ice-blue (more blue, less red)
+        val coldFactor = -tempNormalized
+        if (isNight) {
+            r -= coldFactor * 0.02f
+            b += coldFactor * 0.04f
+        } else {
+            r -= coldFactor * 0.03f
+            g += coldFactor * 0.01f
+            b += coldFactor * 0.03f
+        }
+    }
+
+    // 3. Adjust for Precipitation Probability (precipitationProb: 0 to 100)
+    // Higher rain chance: desaturate/grey-out and lower luminance (darker)
+    val rainFactor = (weather.precipitationProb / 100f).coerceIn(0f, 1f)
+    if (rainFactor > 0.1f) {
+        if (isNight) {
+            // Darker, slight deep navy tint
+            r = r * (1f - rainFactor * 0.2f)
+            g = g * (1f - rainFactor * 0.15f)
+            b = b * (1f - rainFactor * 0.1f) + rainFactor * 0.02f
+        } else {
+            // Muted, less vibrant, slaty gray tint
+            r = r * (1f - rainFactor * 0.1f)
+            g = g * (1f - rainFactor * 0.08f)
+            b = b * (1f - rainFactor * 0.05f) + rainFactor * 0.03f
+        }
+    }
+
+    // 4. Adjust for UV Index (uvIndex: typically 0 to 12)
+    // High UV (exclusive to day or moonlit bright night): adds warm, energetic intensity tint
+    val uvNormalized = (weather.uvIndex / 11f).coerceIn(0f, 1f)
+    if (uvNormalized > 0.1f) {
+        if (!isNight) {
+            // Vibrant gold/yellow hint
+            r += uvNormalized * 0.04f
+            g += uvNormalized * 0.02f
+            b -= uvNormalized * 0.01f
+        } else {
+            // Stellar silver hint
+            r += uvNormalized * 0.01f
+            g += uvNormalized * 0.01f
+            b += uvNormalized * 0.02f
+        }
+    }
+
+    // 5. Adjust for Wind Speed (windSpeed: 0 to 45 km/h)
+    // High wind speed: add fresh breeze, high-contrast cool steel tint
+    val windFactor = (weather.windSpeed / 30f).coerceIn(0f, 1f)
+    if (windFactor > 0.1f) {
+        r -= windFactor * 0.015f
+        g += windFactor * 0.01f
+        b += windFactor * 0.025f
+    }
+
+    // 6. Adjust for Humidity (humidity: 0 to 100)
+    // Extremely humid: shift slightly towards deep mist forest/emerald tint; Dry: crisp clean tones
+    val humidityFactor = (weather.humidity / 100f).coerceIn(0f, 1f)
+    if (humidityFactor > 0.7f) {
+        val extraHumid = (humidityFactor - 0.7f) / 0.3f
+        // Mildly shift towards emerald-cyan
+        g += extraHumid * 0.015f
+        r -= extraHumid * 0.01f
+    }
+
+    // Ensure components remain inside valid [0f, 1f] range
+    return Color(
+        red = r.coerceIn(0f, 1f),
+        green = g.coerceIn(0f, 1f),
+        blue = b.coerceIn(0f, 1f),
+        alpha = baseColor.alpha
+    )
+}
+
 fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
     if (isNight) {
         // Deep dark blue / space black background with distinct weather undertones
@@ -1767,33 +1943,43 @@ fun SimulatedWeatherApp(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Hourly Forecast Simulation
+            val hourlyData = remember(weather) {
+                val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                val list = mutableListOf<Pair<String, Int>>()
+                for (i in 0..11) {
+                    val h = (currentHour + i) % 24
+                    val timeStr = String.format("%02d:00", h)
+                    val angle = (h - 15) * Math.PI / 12
+                    val range = (weather.maxTemp - weather.minTemp).coerceAtLeast(4)
+                    val mid = (weather.maxTemp + weather.minTemp) / 2.0
+                    val modelTemp = (mid + Math.cos(angle) * (range / 2.0)).toInt()
+                    
+                    val temp = if (i == 0) {
+                        weather.currentTemp
+                    } else {
+                        val alpha = (i / 11.0).toFloat().coerceIn(0f, 1f)
+                        (weather.currentTemp * (1f - alpha) + modelTemp * alpha).toInt()
+                    }
+                    list.add(timeStr to temp)
+                }
+                list
+            }
+
+            // Hourly Temperature Trend Line Chart Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
                 shape = RoundedCornerShape(24.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("每小時預報", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("每小時預報與氣溫趨勢 (12小時)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        listOf("08:00" to 22, "10:00" to 25, "12:00" to 28, "14:00" to 29, "16:00" to 27).forEach { (timeStr, temp) ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(timeStr, style = MaterialTheme.typography.labelMedium, color = Color.White)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                WeatherAnimatedIcon(
-                                    condition = weather.condition,
-                                    isNight = false,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(formatTemperature(temp, weatherUnit), style = MaterialTheme.typography.bodyMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    
+                    TemperatureTrendLineChart(
+                        data = hourlyData,
+                        weatherUnit = weatherUnit,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -1909,7 +2095,6 @@ fun SettingsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AuroraMidnight)
             .statusBarsPadding()
     ) {
         Column(
@@ -2517,6 +2702,190 @@ fun WeatherAtmosphereOverlay(
                         color = Color.White.copy(alpha = 0.25f),
                         radius = (2.dp + (i % 3).dp).toPx(),
                         center = androidx.compose.ui.geometry.Offset(currentX, currentY)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Recharts-inspired gorgeous Temperature Trend Line Chart in Native Compose
+@Composable
+fun TemperatureTrendLineChart(
+    data: List<Pair<String, Int>>,
+    weatherUnit: String,
+    isDark: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val scrollState = rememberScrollState()
+
+    // Comfortable width per data point to ensure clear text and smooth line curves
+    val itemWidth = 72.dp
+    val totalWidth = itemWidth * data.size
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .width(totalWidth)
+                    .height(200.dp)
+                    .padding(vertical = 12.dp)
+            ) {
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+
+                if (canvasWidth <= 0 || canvasHeight <= 0 || data.isEmpty()) return@Canvas
+
+                val leftOffset = 45f
+                val rightOffset = 45f
+                val topOffset = 45f
+                val bottomOffset = 45f
+
+                val chartWidth = canvasWidth - leftOffset - rightOffset
+                val chartHeight = canvasHeight - topOffset - bottomOffset
+
+                val temps = data.map { it.second }
+                val maxTemp = temps.maxOrNull() ?: 30
+                val minTemp = temps.minOrNull() ?: 20
+                val tempRange = (maxTemp - minTemp).coerceAtLeast(2)
+
+                // 1. Cartesian Grid Lines (Horizontal)
+                val gridLineCount = 3
+                for (j in 0 until gridLineCount) {
+                    val ratio = j.toFloat() / (gridLineCount - 1)
+                    val y = topOffset + chartHeight * (1f - ratio)
+                    
+                    drawLine(
+                        color = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f),
+                        start = Offset(leftOffset, y),
+                        end = Offset(canvasWidth - rightOffset, y),
+                        strokeWidth = 2f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
+                    )
+                }
+
+                // 2. Compute coordinates for each time-temperature point
+                val stepX = chartWidth / (data.size - 1)
+                val points = data.mapIndexed { index, pair ->
+                    val x = leftOffset + index * stepX
+                    val tempRatio = (pair.second - minTemp).toFloat() / tempRange
+                    val y = topOffset + chartHeight * (1f - tempRatio)
+                    Offset(x, y)
+                }
+
+                // 3. Draw Area Gradient under the curve (Matching Recharts' smooth fade)
+                val areaPath = Path().apply {
+                    if (points.isNotEmpty()) {
+                        moveTo(points.first().x, points.first().y)
+                        for (i in 1 until points.size) {
+                            // Using smooth cubic bezier to connect coordinates
+                            val prevPoint = points[i - 1]
+                            val currPoint = points[i]
+                            val controlPoint1 = Offset(prevPoint.x + stepX / 2f, prevPoint.y)
+                            val controlPoint2 = Offset(currPoint.x - stepX / 2f, currPoint.y)
+                            cubicTo(controlPoint1.x, controlPoint1.y, controlPoint2.x, controlPoint2.y, currPoint.x, currPoint.y)
+                        }
+                        // Close the shape beneath the path
+                        lineTo(points.last().x, topOffset + chartHeight)
+                        lineTo(points.first().x, topOffset + chartHeight)
+                        close()
+                    }
+                }
+
+                drawPath(
+                    path = areaPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF38BDF8).copy(alpha = 0.35f), // Recharts primary sky blue fill
+                            Color(0xFF0284C7).copy(alpha = 0.04f),
+                            Color.Transparent
+                        ),
+                        startY = topOffset,
+                        endY = topOffset + chartHeight
+                    )
+                )
+
+                // 4. Draw the actual temperature trend curve (Sky Blue)
+                val linePath = Path().apply {
+                    if (points.isNotEmpty()) {
+                        moveTo(points.first().x, points.first().y)
+                        for (i in 1 until points.size) {
+                            val prevPoint = points[i - 1]
+                            val currPoint = points[i]
+                            val controlPoint1 = Offset(prevPoint.x + stepX / 2f, prevPoint.y)
+                            val controlPoint2 = Offset(currPoint.x - stepX / 2f, currPoint.y)
+                            cubicTo(controlPoint1.x, controlPoint1.y, controlPoint2.x, controlPoint2.y, currPoint.x, currPoint.y)
+                        }
+                    }
+                }
+
+                drawPath(
+                    path = linePath,
+                    color = Color(0xFF38BDF8),
+                    style = Stroke(
+                        width = 4.5f,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+
+                // 5. Draw Circular Nodes, temperature value texts, and time details
+                points.forEachIndexed { index, point ->
+                    val tempVal = data[index].second
+                    val formattedTemp = formatTemperature(tempVal, weatherUnit)
+                    val timeVal = data[index].first
+
+                    // Circle outer glow base
+                    drawCircle(
+                        color = Color(0xFF0284C7),
+                        radius = 8f,
+                        center = point
+                    )
+
+                    // Inner core
+                    drawCircle(
+                        color = if (isDark) Color.White else Color(0xFF0F172A),
+                        radius = 4.5f,
+                        center = point
+                    )
+
+                    // Temperature value label
+                    val tempTextResult = textMeasurer.measure(
+                        text = formattedTemp,
+                        style = TextStyle(
+                            color = if (isDark) Color.White else Color(0xFF0F172A),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    drawText(
+                        textLayoutResult = tempTextResult,
+                        topLeft = Offset(
+                            x = point.x - tempTextResult.size.width / 2f,
+                            y = point.y - tempTextResult.size.height - 6f
+                        )
+                    )
+
+                    // Time description label
+                    val timeTextResult = textMeasurer.measure(
+                        text = timeVal,
+                        style = TextStyle(
+                            color = if (isDark) Color.White.copy(alpha = 0.65f) else Color(0xFF0F172A).copy(alpha = 0.65f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                    drawText(
+                        textLayoutResult = timeTextResult,
+                        topLeft = Offset(
+                            x = point.x - timeTextResult.size.width / 2f,
+                            y = topOffset + chartHeight + 10f
+                        )
                     )
                 }
             }
