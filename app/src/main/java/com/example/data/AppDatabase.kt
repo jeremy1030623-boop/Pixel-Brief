@@ -41,7 +41,12 @@ data class UserSettings(
     val sleepSyncDurationMs: Long = 0,
     // Custom Avatar Settings
     val avatarEmoji: String = "🦊",
-    val avatarGradientIndex: Int = 0
+    val avatarGradientIndex: Int = 0,
+    // Google Sign In integration
+    val isGoogleLoggedIn: Boolean = false,
+    val googleEmail: String = "",
+    val googleDisplayName: String = "",
+    val googlePhotoUrl: String = ""
 )
 
 @Dao
@@ -95,7 +100,7 @@ interface SleepDataDao {
     suspend fun insertSleepData(data: SleepData)
 }
 
-@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 10, exportSchema = false)
+@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 11, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun taskItemDao(): TaskItemDao

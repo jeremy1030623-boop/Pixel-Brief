@@ -39,6 +39,7 @@ import kotlinx.coroutines.delay
 import com.example.model.*
 import com.example.model.WeatherInfo
 import com.example.data.UserSettings
+import com.example.auth.GoogleSignInHelper
 import androidx.compose.foundation.lazy.LazyColumn
 import com.example.ui.theme.Typography
 import com.example.ui.theme.*
@@ -303,7 +304,13 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     SettingsScreen(
                         settings = userSettings ?: UserSettings(),
                         onBack = { isSettingsOpen = false },
-                        onSave = { updated -> viewModel.updateUserSettings(updated) }
+                        onSave = { updated -> viewModel.updateUserSettings(updated) },
+                        onGoogleLogin = { email, name ->
+                            viewModel.loginWithGoogle(email, name)
+                        },
+                        onGoogleLogout = {
+                            viewModel.logoutGoogle()
+                        }
                     )
                 }
                 is ScreenState.Home -> {
@@ -346,6 +353,60 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     )
                                 }
                             )
+                        }
+                        
+                        // Google Sign-In promo banner
+                        if (userSettings?.isGoogleLoggedIn != true) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                                    .clickable { isSettingsOpen = true },
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFEFF6FF).copy(alpha = 0.9f)
+                                ),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (isNight) Color(0xFF38BDF8).copy(alpha = 0.4f) else Color(0xFF93C5FD)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(Color.White),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("G", fontWeight = FontWeight.Bold, color = Color(0xFF4285F4), fontSize = 18.sp)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "同步您專屬的 Google 帳戶",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = if (isNight) Color.White else Color(0xFF1E3A8A)
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "連線 Google 帳戶並客製全功能智能日程與行事曆晨間簡報資訊！",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF2563EB)
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "前往連線",
+                                        tint = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF2563EB),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
@@ -403,25 +464,150 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
 
 @Composable
 fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
+    val (tagName, tagColor, tagBg) = getNewsTagInfo(item.title, isNight)
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
-            .padding(24.dp)
             .statusBarsPadding()
     ) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 20.dp)
+        ) {
+            // Elegant top brand bar
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(100))
+                            .background(tagColor)
+                    )
+                    Text(
+                        text = "AI COGNITIVE BRIEFING",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.ExtraBold, 
+                            letterSpacing = 1.5.sp
+                        ),
+                        color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.5f)
+                    )
+                }
+                
+                // Segment badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100))
+                        .background(tagBg)
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = tagName,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = tagColor
+                    )
+                }
+            }
+            
+            // Headline Title
             Text(
-                item.title,
-                style = MaterialTheme.typography.headlineLarge,
+                text = item.title,
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    lineHeight = 42.sp,
+                    letterSpacing = 0.2.sp
+                ),
                 fontWeight = FontWeight.Black,
                 color = if (isNight) Color.White else Color(0xFF0F172A)
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            // Meta Row information
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Newspaper,
+                    contentDescription = null,
+                    tint = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Google News RSS 精選 • AI 智能精華提煉版",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            
+            HorizontalDivider(
+                color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.1f),
+                thickness = 1.dp
+            )
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // AI Analysis/Highlight Box
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.6f) else Color(0xFFF1F5F9)
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (isNight) Color.White.copy(alpha = 0.1f) else Color(0xFFE2E8F0)
+                )
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "AI Highlights",
+                            tint = if (isNight) AuroraMint else Color(0xFF0D9488),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "AI 智能簡報精華",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isNight) Color.White else Color(0xFF0F172A)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "本篇內容由端側/雲端 Gemini 進行高精準理解，旨在 20 秒內協助您完整洞察核心事件進展，大幅節省晨間閱讀負荷。",
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp),
+                        color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.5f)
+                    )
+                }
+            }
+            
+            // Headline Body content paragraph
             Text(
-                item.summary,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isNight) Color(0xFFF1F5F9) else Color(0xFF334155)
+                text = item.summary,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    lineHeight = 32.sp,
+                    letterSpacing = 0.5.sp
+                ),
+                color = if (isNight) Color(0xFFE2E8F0) else Color(0xFF334155),
+                fontWeight = FontWeight.Normal
             )
             
             val isUrlValid = remember(item.url) {
@@ -429,7 +615,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
             }
             if (isUrlValid) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(36.dp))
                 Button(
                     onClick = {
                         try {
@@ -439,27 +625,35 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AuroraMint,
-                        contentColor = Color(0xFF0F172A)
+                        containerColor = if (isNight) AuroraMint else Color(0xFF0F172A),
+                        contentColor = if (isNight) Color(0xFF0F172A) else Color.White
                     ),
-                    modifier = Modifier.fillMaxWidth().testTag("open_news_url_button"),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("open_news_url_button"),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞")
+                    Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞", modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("閱讀完整即時新聞報導", fontWeight = FontWeight.SemiBold)
+                    Text("閱讀完整即時新聞報導", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
             
-            Spacer(modifier = Modifier.height(100.dp)) // Padding for FAB so it doesn't overlap text
+            Spacer(modifier = Modifier.height(110.dp)) // Safe padding for the back action floating button
         }
         
+        // Clean Floating Action Back button
         FloatingActionButton(
             onClick = onBack,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
-            containerColor = MaterialTheme.colorScheme.tertiary,
-            contentColor = MaterialTheme.colorScheme.onTertiary,
-            shape = MaterialTheme.shapes.large
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 24.dp, end = 24.dp)
+                .navigationBarsPadding(),
+            containerColor = if (isNight) AuroraMint else Color(0xFF0F172A),
+            contentColor = if (isNight) Color(0xFF0F172A) else Color.White,
+            shape = RoundedCornerShape(18.dp)
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
@@ -1569,6 +1763,26 @@ fun WeatherCard(
     }
 }
 
+fun getNewsTagInfo(title: String, isNight: Boolean): Triple<String, Color, Color> {
+    return when {
+         title.contains("科技") || title.contains("AI") || title.contains("晶片") || title.contains("伺服器") || title.contains("台積電") || title.contains("輝達") || title.contains("Nvidia") -> {
+              Triple("科技前沿", if (isNight) Color(0xFFC084FC) else Color(0xFF7E22CE), if (isNight) Color(0xFFC084FC).copy(alpha = 0.15f) else Color(0xFFFAE8FF))
+         }
+         title.contains("防護") || title.contains("疫情") || title.contains("天氣") || title.contains("雨") || title.contains("颱風") || title.contains("氣溫") || title.contains("寒流") || title.contains("地震") -> {
+              Triple("氣候環境", if (isNight) Color(0xFF38BDF8) else Color(0xFF0369A1), if (isNight) Color(0xFF38BDF8).copy(alpha = 0.15f) else Color(0xFFE0F2FE))
+         }
+         title.contains("財經") || title.contains("股市") || title.contains("金融") || title.contains("外匯") || title.contains("台股") || title.contains("房市") || title.contains("投資") -> {
+              Triple("財經焦點", if (isNight) Color(0xFF34D399) else Color(0xFF047857), if (isNight) Color(0xFF34D399).copy(alpha = 0.15f) else Color(0xFFD1FAE5))
+         }
+         title.contains("政治") || title.contains("政府") || title.contains("立委") || title.contains("選舉") || title.contains("白宮") || title.contains("外交") || title.contains("國安") -> {
+              Triple("政經法規", if (isNight) Color(0xFFF87171) else Color(0xFFB91C1C), if (isNight) Color(0xFFF87171).copy(alpha = 0.15f) else Color(0xFFFEE2E2))
+         }
+         else -> {
+              Triple("全時頭條", if (isNight) AuroraMint else Color(0xFF0D9488), if (isNight) AuroraMint.copy(alpha = 0.15f) else Color(0xFFCCFBF1))
+         }
+    }
+}
+
 @Composable
 fun NewsCard(
     news: List<NewsItem>,
@@ -1586,25 +1800,51 @@ fun NewsCard(
         borderColors = activeTheme.cardBorderGlowColors,
         glowColor = activeTheme.accentColor
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header row with "LIVE • AI 智能彙整" & "今日重點新聞"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "今日重點新聞",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Pulse-dot indicator
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(100))
+                                .background(if (isNight) AuroraMint else Color(0xFF10B981))
+                        )
+                        Text(
+                            text = "LIVE • AI 智能彙整",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            ),
+                            color = (if (isNight) AuroraMint else Color(0xFF059669)).copy(alpha = 0.9f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "今日重點新聞",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isNight) Color.White else Color(0xFF0F172A)
+                    )
+                }
                 
                 // Beautiful capsules selector for Local vs International News
                 Row(
                     modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(50))
-                        .padding(2.dp),
+                        .background(
+                            if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFF0F172A).copy(alpha = 0.05f), 
+                            RoundedCornerShape(50)
+                        )
+                        .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1613,57 +1853,186 @@ fun NewsCard(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (active) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                                    if (active) {
+                                        if (isNight) Color.White.copy(alpha = 0.2f) else Color.White
+                                    } else Color.Transparent,
                                     RoundedCornerShape(50)
                                 )
                                 .clickable { if (!active) onNewsModeChange(code) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
-                                color = if (active) Color.White else Color.White.copy(alpha = 0.65f)
+                                fontWeight = if (active) FontWeight.Black else FontWeight.Bold,
+                                color = if (active) {
+                                    if (isNight) Color.White else Color(0xFF0F172A)
+                                } else {
+                                    if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF0F172A).copy(alpha = 0.5f)
+                                }
                             )
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
             if (news.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFCE93D8), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(
+                            if (isNight) Color.White.copy(alpha = 0.03f) else Color(0xFFF1F5F9).copy(alpha = 0.5f),
+                            RoundedCornerShape(16.dp)
+                        ), 
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp), 
+                            color = if (isNight) AuroraMint else Color(0xFF10B981), 
+                            strokeWidth = 2.5.dp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "偏好切換中，AI 即時精確生成中...", 
+                            style = MaterialTheme.typography.bodySmall, 
+                            color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.6f),
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             } else {
                 val listToRender = news.take(displayedNewsCount)
-                listToRender.forEachIndexed { index, item ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onItemClick(item) }
-                            .padding(vertical = 12.dp)
-                    ) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 4.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listToRender.forEach { item ->
+                        val (tagName, tagColor, tagBg) = getNewsTagInfo(item.title, isNight)
+                        
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onItemClick(item) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isNight) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.6f)
+                            ),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFF0F172A).copy(alpha = 0.05f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    // Tag list or badge
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(tagBg)
+                                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        ) {
+                                            Text(
+                                                text = tagName,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = tagColor
+                                            )
+                                        }
+                                        
+                                        Text(
+                                            text = "Google RSS • 即時",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f)
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    
+                                    // Headline
+                                    Text(
+                                        text = item.title,
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            lineHeight = 20.sp,
+                                            letterSpacing = 0.2.sp
+                                        ),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isNight) Color.White else Color(0xFF0F172A),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    
+                                    // News Summary preview inline!
+                                    if (item.summary.isNotBlank() && item.summary != "尚無摘要內容") {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = item.summary,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                lineHeight = 16.sp
+                                            ),
+                                            color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.65f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    
+                                    // Footer guide text
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Language,
+                                            contentDescription = null,
+                                            tint = (if (isNight) AuroraMint else Color(0xFF0D9488)).copy(alpha = 0.8f),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = if (item.url.isNullOrBlank()) "點擊查看 AI 深度專案摘要分析" else "點擊查看 AI 深度摘要與完整新聞來源",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                            color = if (isNight) AuroraMint.copy(alpha = 0.8f) else Color(0xFF0D9488),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.width(8.dp))
+                                
+                                // Clean interactive chevron
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterVertically)
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(100))
+                                        .background(if (isNight) Color.White.copy(alpha = 0.05f) else Color(0xFFF1F5F9)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowRight,
+                                        contentDescription = "查看詳情",
+                                        tint = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2114,7 +2483,9 @@ fun SimulatedWeatherApp(
 fun SettingsScreen(
     settings: UserSettings,
     onBack: () -> Unit,
-    onSave: (UserSettings) -> Unit
+    onSave: (UserSettings) -> Unit,
+    onGoogleLogin: (String, String) -> Unit = { _, _ -> },
+    onGoogleLogout: () -> Unit = {}
 ) {
     // Local copy of editable options state
     var editUsername by remember { mutableStateOf(settings.username) }
@@ -2135,6 +2506,25 @@ fun SettingsScreen(
 
 
     val context = LocalContext.current
+
+    var showSimulationDialog by remember { mutableStateOf(false) }
+    var simEmail by remember { mutableStateOf(if (settings.googleEmail.isNotBlank()) settings.googleEmail else "jeremy1030623@gmail.com") }
+    var simName by remember { mutableStateOf(if (settings.googleDisplayName.isNotBlank()) settings.googleDisplayName else "Jeremy") }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val account = GoogleSignInHelper.parseSignInResult(result.data)
+        if (account != null) {
+            val email = account.email ?: "jeremy1030623@gmail.com"
+            val displayName = account.displayName ?: "Jeremy"
+            onGoogleLogin(email, displayName)
+            editUsername = displayName
+            editCalendarAccountSelected = email
+        } else {
+            showSimulationDialog = true
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -2219,31 +2609,120 @@ fun SettingsScreen(
                 // Section 1: 登入與帳號設定 (Login & Account)
                 item {
                     SettingsSectionCard(title = "一、帳號與登入") {
-                        if (editUsername.contains("Google") || editUsername.contains("gmail")) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AuroraMint)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("已登入：$editUsername", color = Color.White)
+                        if (settings.isGoogleLoggedIn) {
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.5f)),
+                                border = BorderStroke(1.dp, AuroraMint.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(Color.White),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("G", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4285F4))
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = settings.googleDisplayName.ifBlank { settings.username },
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
+                                        Text(
+                                            text = settings.googleEmail,
+                                            color = Color.White.copy(alpha = 0.6f),
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFD1FAE5))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("已連線", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF065F46))
+                                    }
+                                }
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
                             Button(
-                                onClick = { editUsername = "訪客" },
-                                colors = ButtonDefaults.buttonColors(containerColor = AuroraDeepIndigo),
+                                onClick = {
+                                    onGoogleLogout()
+                                    editUsername = "訪客"
+                                    editCalendarAccountSelected = "無"
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.15f)),
+                                border = BorderStroke(1.dp, Color(0xFFEF4444)),
                                 modifier = Modifier.fillMaxWidth().height(48.dp)
                             ) {
-                                Text("登出並重設為訪客", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("中斷 Google 帳戶連線", color = Color(0xFFFCA5A5), fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Button(
-                                onClick = { editUsername = "Google 使用者" },
+                                onClick = {
+                                    try {
+                                        val client = GoogleSignInHelper.getGoogleSignInClient(context)
+                                        googleSignInLauncher.launch(client.signInIntent)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("Settings", "Failed starting sign-in client, falling back", e)
+                                        showSimulationDialog = true
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("google_login_button"),
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("G", fontWeight = FontWeight.ExtraBold, color = Color.Blue, fontSize = 20.sp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(Color.White),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("G", fontWeight = FontWeight.Black, color = Color(0xFF4285F4), fontSize = 16.sp)
+                                    }
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("使用 Google 帳號登入", color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                    Text("使用 Google 帳戶登入", color = Color(0xFF334155), fontWeight = FontWeight.Bold)
                                 }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
+                                Text("或", modifier = Modifier.padding(horizontal = 8.dp), color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp)
+                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            OutlinedButton(
+                                onClick = { showSimulationDialog = true },
+                                border = BorderStroke(1.dp, AuroraMint.copy(alpha = 0.4f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraMint),
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier.fillMaxWidth().height(40.dp)
+                            ) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("快速測試/行事曆帳戶授權連線", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                         
@@ -2509,6 +2988,87 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showSimulationDialog) {
+        AlertDialog(
+            onDismissRequest = { showSimulationDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(Color(0xFF4285F4)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("G", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("模擬 Google 登入授權", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "在模擬模式中（或裝置未配置 Google Services），您隨時可對此應用程式進行 Google 串聯，系統將深度同步此 Google 帳戶的日曆行事曆與個人喜好設定：",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    OutlinedTextField(
+                        value = simName,
+                        onValueChange = { simName = it },
+                        label = { Text("Google 顯示姓名") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AuroraMint,
+                            unfocusedBorderColor = AuroraSlate,
+                            focusedLabelColor = AuroraMint,
+                            unfocusedLabelColor = AuroraSlate
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = simEmail,
+                        onValueChange = { simEmail = it },
+                        label = { Text("Google 伺服器電子郵件") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AuroraMint,
+                            unfocusedBorderColor = AuroraSlate,
+                            focusedLabelColor = AuroraMint,
+                            unfocusedLabelColor = AuroraSlate
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSimulationDialog = false
+                        onGoogleLogin(simEmail, simName)
+                        editUsername = simName
+                        editCalendarAccountSelected = simEmail
+                        android.widget.Toast.makeText(context, "Google 登入連線串接成功！", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AuroraMint)
+                ) {
+                    Text("授權並登入", color = AuroraMidnight, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSimulationDialog = false }) {
+                    Text("取消", color = Color.White.copy(alpha = 0.6f))
+                }
+            },
+            containerColor = Color(0xFF1E293B),
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 

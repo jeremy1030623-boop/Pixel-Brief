@@ -104,6 +104,7 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.play.services.location)
+  implementation(libs.play.services.auth)
   implementation(libs.retrofit)
   implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
   implementation(libs.google.generativeai)
