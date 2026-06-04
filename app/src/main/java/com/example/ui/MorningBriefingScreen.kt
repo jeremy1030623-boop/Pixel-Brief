@@ -58,6 +58,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.foundation.shape.CircleShape
 
 enum class PremiumLayoutTheme(
@@ -147,6 +150,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val calendar = Calendar.getInstance()
     val hour = calendar.get(Calendar.HOUR_OF_DAY)
     val isNight = hour !in 6..18
+
     var isAutoTheme by remember { mutableStateOf(true) }
     var activePremiumTheme by remember { mutableStateOf(PremiumLayoutTheme.SLATE_AURORA) }
     
@@ -187,7 +191,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
-    val backgroundColor = remember(weather, isNight) { getWeatherSolidColor(weather, isNight) }
+    val backgroundBrush = remember(weather.condition, isNight) { getBackgroundBrush(weather.condition, isNight) }
     var visible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
@@ -251,7 +255,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(color = backgroundColor)
+            .background(brush = backgroundBrush)
     ) {
         // Dynamic, high-fidelity atmosphere overlay reflecting current weather
         WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
@@ -312,7 +316,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     ) {
                         Spacer(modifier = Modifier.height(24.dp))
                         
-                        
                         AnimatedVisibility(
                             visible = visible,
                             enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
@@ -330,7 +333,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isNight = isNight,
                                 goalSuggestion = goalSuggestion,
-                                isRefreshing = isRefreshing, onSettingsClick = { isSettingsOpen = true },
+                                isRefreshing = isRefreshing,
+                                onSettingsClick = { isSettingsOpen = true },
                                 onProfileChange = { newName, newEmoji, newGradientIndex ->
                                     val current = userSettings ?: UserSettings()
                                     viewModel.updateUserSettings(
@@ -402,6 +406,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -549,6 +554,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -751,7 +757,8 @@ fun GreetingSection(
     weatherUnit: String,
     isNight: Boolean,
     goalSuggestion: String,
-    isRefreshing: Boolean, onSettingsClick: () -> Unit,
+    isRefreshing: Boolean,
+    onSettingsClick: () -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
 ) {
     var isEditingProfile by remember { mutableStateOf(false) }
@@ -943,87 +950,105 @@ fun GreetingSection(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = { isEditingProfile = true },
-                    onLongClick = { isEditingProfile = true }
-                )
-                .padding(vertical = 4.dp)
-                .testTag("greeting_section_interactive_row"),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            UserAvatar(
-                username = username,
-                avatarEmoji = avatarEmoji,
-                gradientIndex = avatarGradientIndex,
-                size = 52.dp,
-                textSize = 24.sp
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = greeting.replace(",", "") + ", $username!",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = if (isNight) Color.White else Color(0xFF1E293B),
-                        fontWeight = FontWeight.Bold
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .combinedClickable(
+                        onClick = { isEditingProfile = true },
+                        onLongClick = { isEditingProfile = true }
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "編輯姓名",
-                        tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF1E293B).copy(alpha = 0.6f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Crossfade(
-                    targetState = secondaryMessage,
-                    label = "greeting_secondary"
-                ) { targetMsg ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    ) {
-                        val (icon, tint) = if (isInteraction) {
-                            Pair(Icons.Default.AutoAwesome, AuroraMint)
-                        } else {
-                            if (isNight) {
-                                Pair(Icons.Default.Bedtime, Color(0xFFC084FC)) // Soft lavender purple moon
-                            } else {
-                                Pair(Icons.Default.WbSunny, Color(0xFFFBBF24)) // Radiant golden gold sun
-                            }
-                        }
-                        
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = "氣氛圖示",
-                            tint = tint,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        
+                    .padding(vertical = 4.dp)
+                    .testTag("greeting_section_interactive_row"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UserAvatar(
+                    username = username,
+                    avatarEmoji = avatarEmoji,
+                    gradientIndex = avatarGradientIndex,
+                    size = 52.dp,
+                    textSize = 24.sp
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = targetMsg,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = if (isInteraction) FontWeight.SemiBold else FontWeight.Normal,
-                                letterSpacing = 0.2.sp
-                            ),
-                            color = if (isInteraction) tint else {
-                                if (isNight) Color.White.copy(alpha = 0.75f) else Color(0xFF475569)
-                            },
-                            maxLines = 2
+                            text = greeting.replace(",", "") + ", $username!",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = if (isNight) Color.White else Color(0xFF1E293B),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "編輯姓名",
+                            tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF1E293B).copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Crossfade(
+                        targetState = secondaryMessage,
+                        label = "greeting_secondary"
+                    ) { targetMsg ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) {
+                            val (icon, tint) = if (isInteraction) {
+                                Pair(Icons.Default.AutoAwesome, AuroraMint)
+                            } else {
+                                if (isNight) {
+                                    Pair(Icons.Default.Bedtime, Color(0xFFC084FC)) // Soft lavender purple moon
+                                } else {
+                                    Pair(Icons.Default.WbSunny, Color(0xFFFBBF24)) // Radiant golden gold sun
+                                }
+                            }
+                            
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = "氣氛圖示",
+                                tint = tint,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            
+                            Text(
+                                text = targetMsg,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = if (isInteraction) FontWeight.SemiBold else FontWeight.Normal,
+                                    letterSpacing = 0.2.sp
+                                ),
+                                color = if (isInteraction) tint else {
+                                    if (isNight) Color.White.copy(alpha = 0.75f) else Color(0xFF475569)
+                                },
+                                maxLines = 2
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "（自訂：點擊或長按頭像即可自訂專屬名稱與頭像 ✨）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isNight) Color.White.copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.35f),
+                        fontSize = 10.sp
+                    )
                 }
-                
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "（自訂：點擊或長按頭像即可自訂專屬名稱與頭像 ✨）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isNight) Color.White.copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.35f),
-                    fontSize = 10.sp
+            }
+            
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "設定",
+                    tint = if (isNight) Color.White else Color(0xFF0F172A),
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
@@ -1043,25 +1068,44 @@ fun TimeGreetingText(
     isNight: Boolean,
     goalSuggestion: String
 ) {
+    val annotatedText = remember(time, eventText, weather, weatherUnit, isNight, goalSuggestion) {
+        buildAnnotatedString {
+            // Main news/weather briefing paragraph
+            val mainBrief = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText"
+            append(mainBrief)
+            
+            if (goalSuggestion.isNotBlank()) {
+                append("\n\n")
+                withStyle(
+                    style = SpanStyle(
+                        fontWeight = FontWeight.Bold,
+                        color = if (isNight) AuroraMint else Color(0xFF047857) // Vivid emerald green accent for a readable/active suggestion callout
+                    )
+                ) {
+                    append("💡 每日目標建議  ")
+                }
+                withStyle(
+                    style = SpanStyle(
+                        fontWeight = FontWeight.Medium,
+                        color = if (isNight) Color.White.copy(alpha = 0.95f) else Color(0xFF1E293B)
+                    )
+                ) {
+                    append(goalSuggestion)
+                }
+            }
+        }
+    }
+
     Column {
         Text(
-            text = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText",
-            style = MaterialTheme.typography.titleLarge,
+            text = annotatedText,
+            style = MaterialTheme.typography.titleLarge.copy(lineHeight = 34.sp),
             color = if (isNight) Color.White else Color(0xFF1E293B),
             textAlign = TextAlign.Start,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
         )
-        if (goalSuggestion.isNotBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "💡 $goalSuggestion",
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isNight) Color.White.copy(alpha = 0.85f) else Color(0xFF334155),
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                textAlign = TextAlign.Start,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-            )
-        }
     }
 }
 
@@ -2095,6 +2139,7 @@ fun SettingsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(AuroraMidnight)
             .statusBarsPadding()
     ) {
         Column(

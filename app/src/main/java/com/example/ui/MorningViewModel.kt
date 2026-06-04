@@ -54,6 +54,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     launch {
                         database.taskItemDao().getAllTasks().collect { tasks ->
                             _tasksList.value = tasks
+                            updateGoalSuggestions()
                         }
                     }
                     launch {
@@ -318,8 +319,50 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         val sleep = _sleepInfo.value
         val health = _healthInfo.value
         val weather = _weatherInfo.value
+        val calendarEvents = _nextEvents.value
+        val tasks = _tasksList.value
+        val news = _newsDetail.value
         
-        val prompt = "你是專業生活規劃簡報大師。請根據以下數據：天氣 ${weather.condition} (${weather.currentTemp}°C)，昨晚睡眠 ${sleep.hours} 小時，今日步數 ${health.steps}。請給出一段針對今日生活目標的個人化建議，包含戶外活動調整建議與休息規劃，字數約 60-80 字。語氣溫馨、充滿正能量、務實，不要條列式，以簡報大摘要形式呈現。"
+        val dateStr = java.text.SimpleDateFormat("yyyy年MM月dd日 EEEE", java.util.Locale.TAIWAN).format(java.util.Date())
+        
+        val calendarStr = if (calendarEvents.isNotEmpty()) {
+            calendarEvents.joinToString("; ") { "${it.title}(${java.text.SimpleDateFormat("HH:mm", java.util.Locale.TAIWAN).format(java.util.Date(it.startTime))})" }
+        } else {
+            "無活動排程"
+        }
+        
+        val tasksStr = if (tasks.isNotEmpty()) {
+            tasks.filter { !it.isCompleted }.joinToString("; ") { it.text }
+        } else {
+            "無未完成事項"
+        }
+        
+        val newsStr = if (news.isNotEmpty()) {
+            news.take(2).joinToString("; ") { it.title }
+        } else {
+            "無焦點新聞"
+        }
+
+        val prompt = """
+            你是專業且極具親和力的個人生活規劃助理。
+            請根據以下當前的全面性晨間情境資訊，為使用者產生【一個具體的、可行的、充滿激勵作用的每日目標建議】：
+            - 當前日期: $dateStr
+            - 當天天氣: ${weather.locationName} ${weather.condition}，氣溫 ${weather.currentTemp}°C，濕度 ${weather.humidity}%
+            - 用戶日曆活動: $calendarStr
+            - 待辦清單事項 (Tasks): $tasksStr
+            - 今日最新焦點新聞: $newsStr
+            
+            建議規範：
+            1. 請將上述日曆活動、待辦事項、天氣或新聞「巧妙結合」，挑選一到多個面向，為用戶歸納推導出一個「此時此地最具效益的單一關鍵生活目標建議」。
+            2. 目標建議應「簡潔明瞭」、「具體可行」，並「鼓勵用戶積極參與」。
+            3. 不要分點，不要列一堆目標，請給出 1 至 2 句流暢有溫度的短文。字數限制在 60-100 字之間。
+            4. 範例風格：
+               - 「今天天氣晴朗，適合戶外散步30分鐘。」
+               - 「根據你的新聞摘要，今天是一個學習新知識的好時機，嘗試閱讀一篇關於AI的文章。」
+               
+            請直接輸出目標建議文字，不要包含任何開頭引言或外層引號。
+        """.trimIndent()
+        
         val modelName = _userSettings.value?.geminiModelSelected ?: "Gemini Flash Latest"
         
         _goalSuggestion.value = try {
@@ -329,12 +372,30 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {
-             if (sleep.hours < 6f) {
-                "昨晚睡眠較少，今日請務必 prioritize 休息，減少高強度活動，並適時補充水分與小憩。"
-            } else if (weather.condition.contains("晴") && health.steps < 5000) {
-                "今天天氣絕佳，且最近活動量較少，強烈建議您安排 20 分鐘戶外漫步，吸收陽光恢復活力。"
-            } else {
-                "今天持續維持均衡作息，保持心情愉悅即可，隨時關注身體狀態，適量休息。"
+            // Intelligent conditional fallbacks matching the user requirements
+            val firstTask = tasks.firstOrNull { !it.isCompleted }?.text
+            val firstEvent = calendarEvents.firstOrNull()?.title
+            val hasAiNews = news.any { it.title.contains("AI") || it.title.contains("科技") || it.summary.contains("AI") || it.summary.contains("科技") }
+            
+            when {
+                weather.condition.contains("雨") || weather.condition.contains("雷") -> {
+                    "今日有雨且天氣潮濕，適合安排室內閱讀或居家舒展，今天的新聞或 Tasks 清單中「$firstTask」也是靜下心來處理的好任務！"
+                }
+                hasAiNews -> {
+                    "根據你的新聞摘要，今天是一個學習新知識的好時機，嘗試閱讀一篇關於AI科技或最新趨勢的文章，踏出成長第一步。"
+                }
+                firstEvent != null -> {
+                    "今日日曆有「$firstEvent」活動。建議提早10分鐘出發並確認簡報內容，日落後安排一次輕舒緩拉伸。"
+                }
+                firstTask != null -> {
+                    "今天溫度舒適，是消滅待辦事項的好時機！建議設定25分鐘番茄鐘專注完成「$firstTask」，一鼓作氣完成今天最重要的任務。"
+                }
+                weather.condition.contains("晴") || weather.condition.contains("乾") -> {
+                    "今天天氣晴朗且溫度適宜，非常適合戶外放鬆。建議利用空檔到鄰近公園散步30分鐘，吸收陽光恢復活力！"
+                }
+                else -> {
+                    "今天的生活步調很適合維持均衡作息。在工作的間隙，給自己預留一小段伸展與深呼吸時間，擁抱充實、心滿意足的一天！"
+                }
             }
         }
     }
@@ -548,6 +609,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 fetchNews(newWeather)
+                updateGoalSuggestions()
                 if (isManual) {
                     triggerInteractionFeedback("當前定位與最新天氣數據同步成功！已為您備好最準確的出門參考 ☀️")
                 }
