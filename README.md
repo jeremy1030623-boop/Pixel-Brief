@@ -1,4 +1,4 @@
-What is the purpose of my creation of this application?
+#What is the purpose of my creation of this application?
 
 In today's digital environment, starting the day often involves a fragmented routine. Upon waking up, most users cycle through several disjointed applications: checking a weather application for climate conditions, launching a calendar to check upcoming schedules, opening a web browser or news reader to scan current events, and visiting a fitness dashboard to review sleep quality or activity tracking metrics.
 
