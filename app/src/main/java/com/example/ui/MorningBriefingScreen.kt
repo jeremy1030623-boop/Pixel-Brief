@@ -22,6 +22,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -228,7 +229,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
-    val triggerToggleSpeak = remember(username, timeState, weather, events, goalSuggestion, userSettings, isSpeaking, ttsManager) {
+    val triggerToggleSpeak = remember(username, timeState, weather, events, userSettings, isSpeaking, ttsManager) {
         {
             if (isSpeaking) {
                 ttsManager.stop()
@@ -261,12 +262,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     } else {
                         ""
                     }
-                    val goalText = if (goalSuggestion.isNotBlank()) {
-                        "Your recommended workspace focus target is: ${goalSuggestion}."
-                    } else {
-                        ""
-                    }
-                    "$englishGreeting, $username! The current local time is ${timeState.time}. Today's brief highlight is: ${timeState.secondaryMessage}. $weatherText $eventText $goalText"
+                    "$englishGreeting, $username! The current local time is ${timeState.time}. Today's brief highlight is: ${timeState.secondaryMessage}. $weatherText $eventText"
                 } else if (lang == "zh_HK") {
                     val eventText = if (events.isNotEmpty()) {
                         "，您今日有 ${events.size} 項日程，第一項活動係 ${events.first().title}"
@@ -278,13 +274,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     } else {
                         ""
                     }
-                    val goalText = if (goalSuggestion.isNotBlank()) {
-                        "，今日智慧小助手推薦目標係：${goalSuggestion}"
-                    } else {
-                        ""
-                    }
                     val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！而家時間 ${timeState.time}。今日晨間導讀亮點：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                    "${greetingClean}，${username}！而家時間 ${timeState.time}。今日晨間導讀亮點：${timeState.secondaryMessage}${weatherText}${eventText}。"
                 } else if (lang == "ja") {
                     val eventText = if (events.isNotEmpty()) {
                         "、本日の予定は ${events.size} 件あります。最初の予定は ${events.first().title} です"
@@ -296,18 +287,13 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     } else {
                         ""
                     }
-                    val goalText = if (goalSuggestion.isNotBlank()) {
-                        "、今日のおすすめ目標は：${goalSuggestion} です"
-                    } else {
-                        ""
-                    }
                     val greetingClean = when {
                         timeState.greeting.contains("早") -> "おはようございます"
                         timeState.greeting.contains("午") -> "こんにちは"
                         timeState.greeting.contains("晚") -> "こんばんは"
                         else -> "こんにちは"
                     }
-                    "${greetingClean}、${username}さん！現在の時刻は ${timeState.time} です。今日のブリーフィングハイライト：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                    "${greetingClean}、${username}さん！現在の時刻は ${timeState.time} です。今日のブリーフィングハイライト：${timeState.secondaryMessage}${weatherText}${eventText}。"
                 } else {
                     val eventText = if (events.isNotEmpty()) {
                         "，您今天有 ${events.size} 筆行事曆日程，第一項活動是 ${events.first().title}"
@@ -319,13 +305,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     } else {
                         ""
                     }
-                    val goalText = if (goalSuggestion.isNotBlank()) {
-                        "，今日智慧小助手推薦目標為：${goalSuggestion}"
-                    } else {
-                        ""
-                    }
                     val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！現在時間 ${timeState.time}。今日晨間亮點簡報：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                    "${greetingClean}，${username}！現在時間 ${timeState.time}。今日晨間亮點簡報：${timeState.secondaryMessage}${weatherText}${eventText}。"
                 }
 
                 ttsManager.speak(speechText)
@@ -458,6 +439,13 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
+    val showContent = !isBiometricEnabled || isAppUnlocked
+    val containerAlpha by animateFloatAsState(
+        targetValue = if (visible && showContent) 1f else 0f,
+        animationSpec = tween(durationMillis = 600, easing = LinearOutSlowInEasing),
+        label = "container_fade_in"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -469,7 +457,12 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                 onUnlockClick = triggerUnlock
             )
         } else {
-            // Dynamic, high-fidelity atmosphere overlay reflecting current weather
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(containerAlpha)
+            ) {
+                // Dynamic, high-fidelity atmosphere overlay reflecting current weather
             WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
 
         SnackbarHost(
@@ -585,23 +578,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             Spacer(modifier = Modifier.height(16.dp))
                             
                             AnimatedVisibility(
-                                visible = visible,
-                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + expandVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f))
-                            ) {
-                                DailyGoalsCard(
-                                    tasks = tasksList,
-                                    isNight = isNight,
-                                    activeTheme = activePremiumTheme,
-                                    onAddTask = { text -> viewModel.addTask(text) },
-                                    onToggleTask = { task -> viewModel.toggleTask(task) },
-                                    onDeleteTask = { task -> viewModel.deleteTask(task) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            AnimatedVisibility(
                                 visible = agendaVisible,
                                 enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
                             ) {
@@ -657,7 +633,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     }
                 }
             }
-        }
+            }
+            }
         }
     }
 }
@@ -3682,7 +3659,7 @@ fun SecurityLockScreen(
                 )
 
                 Text(
-                    text = "為確保您的健康指數、昨夜深度睡眠數據、以及即時行事曆與今日生活目標等隱私安全，請進行裝置與生物特徵驗證來解鎖首頁。",
+                    text = "為確保您的健康指數、昨夜深度睡眠數據、以及即時行事曆等隱私安全，請進行裝置與生物特徵驗證來解鎖首頁。",
                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                     color = Color.White.copy(alpha = 0.65f),
                     textAlign = TextAlign.Center
