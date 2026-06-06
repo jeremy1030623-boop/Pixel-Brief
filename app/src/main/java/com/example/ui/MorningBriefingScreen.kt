@@ -127,6 +127,7 @@ sealed class ScreenState {
     object Settings : ScreenState()
     data class NewsDetail(val item: NewsItem) : ScreenState()
     object WeatherDetail : ScreenState()
+    object CalendarViewer : ScreenState()
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -138,6 +139,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val sleepInfo by viewModel.sleepInfo.collectAsState()
     val healthInfo by viewModel.healthInfo.collectAsState()
     val events by viewModel.nextEvents.collectAsState()
+    val todaysEvents by viewModel.todaysEvents.collectAsState()
     val news by viewModel.newsDetail.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
@@ -209,8 +211,62 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isWeatherDetailOpen by remember { mutableStateOf(false) }
+    var isCalendarOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    var isSpeaking by remember { mutableStateOf(false) }
+    val ttsManager = remember(context) { 
+        MorningTtsManager(context) {
+            isSpeaking = false
+        }
+    }
+
+    DisposableEffect(ttsManager) {
+        onDispose {
+            ttsManager.shutdown()
+        }
+    }
+
+    val triggerToggleSpeak = remember(username, timeState, weather, events, goalSuggestion, userSettings, isSpeaking, ttsManager) {
+        {
+            if (isSpeaking) {
+                ttsManager.stop()
+                isSpeaking = false
+            } else {
+                isSpeaking = true
+                val eventTextForTTS = if (events.isNotEmpty()) {
+                    "，您今天有 ${events.size} 筆行事曆日程，第一項活動是 ${events.first().title}"
+                } else {
+                    "，今天您沒有安排行事曆活動"
+                }
+                
+                val weatherUnitSymbol = if (userSettings?.weatherUnit == "F") "華氏" else "攝氏"
+                val weatherTextForTTS = if (weather.condition.isNotEmpty()) {
+                    "，今天天氣狀況是 ${weather.condition}，氣溫大約是 ${weatherUnitSymbol} ${weather.currentTemp}度"
+                } else {
+                    ""
+                }
+                
+                val goalTextForTTS = if (goalSuggestion.isNotBlank()) {
+                    "，今日智慧小助手推薦目標為：${goalSuggestion}"
+                } else {
+                    ""
+                }
+
+                val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
+                val speechText = "${greetingClean}，${username}！" +
+                                "現在時間 ${timeState.time}。" +
+                                "今日晨間亮點簡報：${timeState.secondaryMessage}" +
+                                weatherTextForTTS +
+                                eventTextForTTS +
+                                goalTextForTTS +
+                                "。"
+                                
+                ttsManager.speak(speechText)
+            }
+        }
+    }
 
     val isBiometricEnabled = userSettings?.isBiometricEnabled ?: false
     var isAppUnlocked by remember { mutableStateOf(false) }
@@ -357,21 +413,23 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         )
 
         val currentNewsItem = selectedNewsItem
-        val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen) {
+        val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen, isCalendarOpen) {
             when {
                 currentNewsItem != null -> ScreenState.NewsDetail(currentNewsItem)
                 isSettingsOpen -> ScreenState.Settings
                 isWeatherDetailOpen -> ScreenState.WeatherDetail
+                isCalendarOpen -> ScreenState.CalendarViewer
                 else -> ScreenState.Home
             }
         }
 
         // Handle back navigation for sub-screens
-        BackHandler(enabled = currentNewsItem != null || isSettingsOpen || isWeatherDetailOpen) {
+        BackHandler(enabled = currentNewsItem != null || isSettingsOpen || isWeatherDetailOpen || isCalendarOpen) {
             when {
                 currentNewsItem != null -> selectedNewsItem = null
                 isSettingsOpen -> isSettingsOpen = false
                 isWeatherDetailOpen -> isWeatherDetailOpen = false
+                isCalendarOpen -> isCalendarOpen = false
             }
         }
 
@@ -380,6 +438,16 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             label = "ScreenContent"
         ) { state ->
             when (state) {
+                is ScreenState.CalendarViewer -> {
+                    CalendarViewerScreen(
+                        events = todaysEvents,
+                        permissionGranted = calendarPermissionGranted.value,
+                        onRequestPermission = { checkAndRequestCalendarPermission() },
+                        activeTheme = activePremiumTheme,
+                        isNight = isNight,
+                        onBack = { isCalendarOpen = false }
+                    )
+                }
                 is ScreenState.NewsDetail -> {
                     NewsDetailScreen(state.item, isNight) {
                         selectedNewsItem = null
@@ -431,6 +499,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     goalSuggestion = goalSuggestion,
                                     isRefreshing = isRefreshing,
                                     isGoalSuggestionAdded = tasksList.any { it.text == goalSuggestion },
+                                    activeTheme = activePremiumTheme,
+                                    isSpeaking = isSpeaking,
+                                    onToggleSpeak = { triggerToggleSpeak() },
                                     onSettingsClick = { isSettingsOpen = true },
                                     onAddTask = { text -> viewModel.addTask(text) },
                                     onProfileChange = { newName, newEmoji, newGradientIndex ->
@@ -470,7 +541,11 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
                             ) {
                                 AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
-                                    checkAndRequestCalendarPermission()
+                                    if (calendarPermissionGranted.value) {
+                                        isCalendarOpen = true
+                                    } else {
+                                        checkAndRequestCalendarPermission()
+                                    }
                                 }
                             }
                             
@@ -495,7 +570,13 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 newsVisible = newsVisible,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
-                                onAuthorize = { checkAndRequestCalendarPermission() },
+                                onAuthorize = {
+                                    if (calendarPermissionGranted.value) {
+                                        isCalendarOpen = true
+                                    } else {
+                                        checkAndRequestCalendarPermission()
+                                    }
+                                },
                                 onNewsModeChange = { newMode ->
                                     val current = userSettings ?: UserSettings()
                                     viewModel.updateUserSettings(current.copy(newsMode = newMode))
@@ -874,6 +955,9 @@ fun GreetingSection(
     goalSuggestion: String,
     isRefreshing: Boolean,
     isGoalSuggestionAdded: Boolean,
+    activeTheme: PremiumLayoutTheme,
+    isSpeaking: Boolean,
+    onToggleSpeak: () -> Unit,
     onSettingsClick: () -> Unit,
     onAddTask: (String) -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
@@ -1092,8 +1176,15 @@ fun GreetingSection(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val localizedGreeting = remember(greeting, username) {
+                            if (greeting.contains("Good ") || greeting.contains("Hi ")) {
+                                greeting.replace(",", "") + ", $username!"
+                            } else {
+                                "$greeting，${username}！"
+                            }
+                        }
                         Text(
-                            text = greeting.replace(",", "") + ", $username!",
+                            text = localizedGreeting,
                             style = MaterialTheme.typography.headlineSmall,
                             color = if (isNight) Color.White else Color(0xFF1E293B),
                             fontWeight = FontWeight.Bold
@@ -1147,6 +1238,45 @@ fun GreetingSection(
                         }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // TTS Read Aloud Button
+            IconButton(
+                onClick = onToggleSpeak,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        color = if (isSpeaking) activeTheme.accentColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    )
+                    .testTag("tts_brief_button")
+            ) {
+                Icon(
+                    imageVector = if (isSpeaking) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    contentDescription = if (isSpeaking) "停止語音導讀" else "語音導讀今日簡報",
+                    tint = if (isSpeaking) activeTheme.accentColor else (if (isNight) Color.White else Color(0xFF1E293B)),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            // Settings Gear Button
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(Color.White.copy(alpha = 0.05f), androidx.compose.foundation.shape.CircleShape)
+                    .testTag("open_settings_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "專屬設定",
+                    tint = if (isNight) Color.White else Color(0xFF1E293B),
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
         
@@ -2089,8 +2219,42 @@ fun WeatherCard(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
+                    // Beautiful Location with status badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (weather.isGpsLocated) Icons.Default.MyLocation else Icons.Default.LocationOn,
+                            contentDescription = "氣候位置定位狀況",
+                            tint = if (weather.isGpsLocated) AuroraMint else Color(0xFF60A5FA),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = weather.locationName,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        // Smart positioning tag
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = if (weather.isGpsLocated) "GPS 實時" else "預設城市",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
+                                color = if (weather.isGpsLocated) AuroraMint else Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.9f))
+                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
                 }
             }
             
@@ -3452,5 +3616,432 @@ fun SecurityLockScreen(
             }
         }
     }
+}
+
+@Composable
+fun CalendarViewerScreen(
+    events: List<com.example.data.CalendarEvent>,
+    permissionGranted: Boolean,
+    onRequestPermission: () -> Unit,
+    activeTheme: PremiumLayoutTheme,
+    isNight: Boolean,
+    onBack: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(brush = if (isNight) {
+                Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617)))
+            } else {
+                Brush.verticalGradient(listOf(Color(0xFFF8FAFC), Color(0xFFE2E8F0)))
+            })
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp)
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Header Top Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("calendar_back_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回首頁",
+                        tint = if (isNight) Color.White else Color(0xFF0F172A)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column {
+                    Text(
+                        text = "今日重要日程",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = if (isNight) Color.White else Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = "Calendar Task Viewer",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF64748B)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            if (!permissionGranted) {
+                // Beautiful Unauthorized View
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    GlassmorphicCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        containerColor = activeTheme.cardBg,
+                        borderColors = activeTheme.cardBorderGlowColors,
+                        glowColor = activeTheme.accentColor
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(activeTheme.accentColor.copy(alpha = 0.15f))
+                                    .border(1.5.dp, activeTheme.accentColor, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarToday,
+                                    contentDescription = "行事曆尚未授權",
+                                    tint = activeTheme.accentColor,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            
+                            Text(
+                                text = "需要行事曆讀取權限",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (isNight) Color.White else Color(0xFF0F172A)
+                            )
+                            
+                            Text(
+                                text = "系統配對讀取您的本地日曆行程，能讓 AI 智慧小助手整合今日出門天氣與行程動態、目標提供最高效率、溫度的全方位生活晨間簡報。我們極度重視隱私防護，資料僅在離線端安全處理，絕不上傳個人行程。",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    lineHeight = 22.sp,
+                                    textAlign = TextAlign.Center
+                                ),
+                                color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                            )
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Button(
+                                onClick = onRequestPermission,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = activeTheme.accentColor,
+                                    contentColor = if (isNight) Color(0xFF0F051D) else Color.White
+                                ),
+                                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("authorize_calendar_button")
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "安全授權",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "授權讀取本地行事曆",
+                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Authorized list view
+                // Show dynamic header stat
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val formattedDate = remember {
+                        val sdf = java.text.SimpleDateFormat("yyyy年MM月dd日 EEEE", java.util.Locale.TAIWAN)
+                        sdf.format(java.util.Date())
+                    }
+                    Text(
+                        text = formattedDate,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = activeTheme.accentColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "今日 ${events.size} 筆行程",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = activeTheme.accentColor
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                if (events.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        GlassmorphicCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            containerColor = activeTheme.cardBg,
+                            borderColors = activeTheme.cardBorderGlowColors,
+                            glowColor = activeTheme.accentColor
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.05f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarToday,
+                                        contentDescription = "無行程",
+                                        tint = if (isNight) Color.White.copy(alpha = 0.3f) else Color(0xFF64748B),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                
+                                Text(
+                                    text = "今日尚無安排行程 🎉延續放鬆節奏吧！",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isNight) Color.White else Color(0xFF0F172A),
+                                    textAlign = TextAlign.Center
+                                )
+                                
+                                Text(
+                                    text = "請確認您的系統行事曆中是否有新增當前日期活動，或是稍後下拉頁面重新同步整理。",
+                                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                    color = if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF64748B),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("calendar_task_list"),
+                        contentPadding = PaddingValues(bottom = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(events.size) { index ->
+                            val event = events[index]
+                            CalendarEventItemCard(
+                                event = event,
+                                index = index,
+                                activeTheme = activeTheme,
+                                isNight = isNight
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarEventItemCard(
+    event: com.example.data.CalendarEvent,
+    index: Int,
+    activeTheme: PremiumLayoutTheme,
+    isNight: Boolean
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    
+    GlassmorphicCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("calendar_event_item_$index")
+            .clickable { isExpanded = !isExpanded },
+        containerColor = activeTheme.cardBg.copy(alpha = 0.75f),
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor.copy(alpha = 0.15f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Colored left accent bar indicating order or time
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    activeTheme.accentColor,
+                                    activeTheme.secondaryAccent
+                                )
+                            )
+                        )
+                )
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = event.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (isNight) Color.White else Color(0xFF0F172A),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "活動時間",
+                            tint = activeTheme.accentColor.copy(alpha = 0.8f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = formatEventTimeSpanDetail(event.startTime, event.endTime),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                        )
+                    }
+                }
+                
+                if (event.description.isNotEmpty() || event.location.isNotEmpty()) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                        contentDescription = if (isExpanded) "收合行程詳細資訊" else "展開行程詳細資訊",
+                        tint = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF94A3B8),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+            
+            // Expandable details block
+            if (isExpanded) {
+                if (event.location.isNotEmpty() || event.description.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(
+                        color = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFFE2E8F0),
+                        thickness = 1.dp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    if (event.location.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = "地點位置標示",
+                                tint = Color(0xFFF87171),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Text(
+                                text = event.location,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isNight) Color.White.copy(alpha = 0.8f) else Color(0xFF334155)
+                            )
+                        }
+                    }
+                    
+                    if (event.description.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "備註詳情",
+                                tint = activeTheme.accentColor.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(top = 2.dp)
+                            )
+                            Text(
+                                text = event.description,
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun formatEventTimeSpanDetail(startTime: Long, endTime: Long): String {
+    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val startStr = sdf.format(Date(startTime))
+    val endStr = sdf.format(Date(endTime))
+    return "$startStr - $endStr"
 }
 

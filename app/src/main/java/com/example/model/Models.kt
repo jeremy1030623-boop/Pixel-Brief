@@ -13,7 +13,8 @@ data class WeatherInfo(
     val precipitationProb: Int = 10,
     val uvIndex: Float = 5.0f,
     val iconRes: Int = 0, // In a real app, this would be an icon ID
-    val locationName: String = "台北"
+    val locationName: String = "台北",
+    val isGpsLocated: Boolean = false
 )
 
 data class SleepInfo(

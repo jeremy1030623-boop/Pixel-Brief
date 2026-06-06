@@ -145,6 +145,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _nextEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val nextEvents = _nextEvents.asStateFlow()
 
+    private val _todaysEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
+    val todaysEvents = _todaysEvents.asStateFlow()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _newsDetail = MutableStateFlow<List<NewsItem>>(
@@ -199,10 +202,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val calendar = Calendar.getInstance()
                 val hour = calendar.get(Calendar.HOUR_OF_DAY)
                 val greeting = when (hour) {
-                    in 5..11 -> "Good morning,"
-                    in 12..17 -> "Good afternoon,"
-                    in 18..23 -> "Good evening,"
-                    else -> "Hi there,"
+                    in 5..6 -> "🌅 拂曉清晨好"
+                    in 7..8 -> "☀️ 早安晨光"
+                    in 9..11 -> "🚀 上午專注時刻"
+                    in 12..13 -> "🍱 午安舒活"
+                    in 14..17 -> "☕ 愜意午後"
+                    in 18..20 -> "🌌 溫馨傍晚"
+                    in 21..23 -> "💤 晚安好夢"
+                    else -> "🦉 深夜靜謐"
                 }
                 
                 emit(sdf.format(now) to greeting)
@@ -519,12 +526,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
-                val location = locationHelper.getCurrentLocation()
+                val useGps = _userSettings.value?.preciseLocationEnabled ?: true
+                val location = if (useGps) locationHelper.getCurrentLocation() else null
                 val detected = getCityNameFromLocation(location)
+                val isGps = useGps && location != null && detected.isNotEmpty() && detected != "台灣"
                 val defaultCityOpt = _userSettings.value?.defaultCity ?: "台北"
-                val finalCity = if (detected.isNotEmpty() && detected != "台灣") detected else defaultCityOpt
+                val finalCity = if (detected.isNotEmpty() && detected != "台灣" && useGps) detected else defaultCityOpt
                 
-                val (lat, lon) = if (location != null) {
+                val (lat, lon) = if (location != null && useGps) {
                     Pair(location.latitude, location.longitude)
                 } else {
                     getCoordinatesForCity(finalCity)
@@ -551,7 +560,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                                             currentTemp = temp,
                                             maxTemp = temp + 4,
                                             minTemp = temp - 4,
-                                            locationName = finalCity
+                                            locationName = finalCity,
+                                            isGpsLocated = isGps
                                         )
                                         android.util.Log.d("MorningViewModel", "Loaded weather from ContentProvider: $systemWeather")
                                     }
@@ -563,7 +573,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     if (systemWeather != null) {
-                        systemWeather!!.copy(locationName = finalCity)
+                        systemWeather!!.copy(locationName = finalCity, isGpsLocated = isGps)
                     } else {
                         val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
                         WeatherInfo(
@@ -576,7 +586,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                             windSpeed = weatherData.current.wind_speed_10m ?: 10f,
                             precipitationProb = weatherData.daily.precipitation_probability_max?.firstOrNull() ?: 10,
                             uvIndex = weatherData.daily.uv_index_max?.firstOrNull() ?: 5.0f,
-                            locationName = finalCity
+                            locationName = finalCity,
+                            isGpsLocated = isGps
                         )
                     }
                 } catch (e: Throwable) {
@@ -586,7 +597,8 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                         currentTemp = 28,
                         maxTemp = 32,
                         minTemp = 24,
-                        locationName = finalCity
+                        locationName = finalCity,
+                        isGpsLocated = isGps
                     )
                 }
                 _weatherInfo.value = newWeather
@@ -602,10 +614,22 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                     _sleepInfo.value = SleepInfo(hours = 0f, snoringMinutes = 0, coughCount = 0)
                 }
 
-                try {
-                    _nextEvents.value = calendarRepository.getNextEvents()
-                } catch (e: Throwable) {
-                    android.util.Log.e("MorningViewModel", "Failed to fetch calendar events", e)
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        getApplication(),
+                        android.Manifest.permission.READ_CALENDAR
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    try {
+                        _nextEvents.value = calendarRepository.getNextEvents()
+                        _todaysEvents.value = calendarRepository.getTodaysUpcomingEvents()
+                    } catch (e: SecurityException) {
+                        android.util.Log.w("MorningViewModel", "SecurityException fetching calendar: ${e.message}")
+                    } catch (e: Throwable) {
+                        android.util.Log.e("MorningViewModel", "Failed to fetch calendar events", e)
+                    }
+                } else {
+                    _nextEvents.value = emptyList()
+                    _todaysEvents.value = emptyList()
                 }
 
                 fetchNews(newWeather)
