@@ -235,34 +235,99 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                 isSpeaking = false
             } else {
                 isSpeaking = true
-                val eventTextForTTS = if (events.isNotEmpty()) {
-                    "，您今天有 ${events.size} 筆行事曆日程，第一項活動是 ${events.first().title}"
+                val lang = userSettings?.ttsLanguage ?: "zh_TW"
+                ttsManager.setLanguage(lang)
+
+                val weatherUnitSymbol = if (userSettings?.weatherUnit == "F") {
+                    if (lang == "en") "Fahrenheit" else "華氏"
                 } else {
-                    "，今天您沒有安排行事曆活動"
-                }
-                
-                val weatherUnitSymbol = if (userSettings?.weatherUnit == "F") "華氏" else "攝氏"
-                val weatherTextForTTS = if (weather.condition.isNotEmpty()) {
-                    "，今天天氣狀況是 ${weather.condition}，氣溫大約是 ${weatherUnitSymbol} ${weather.currentTemp}度"
-                } else {
-                    ""
-                }
-                
-                val goalTextForTTS = if (goalSuggestion.isNotBlank()) {
-                    "，今日智慧小助手推薦目標為：${goalSuggestion}"
-                } else {
-                    ""
+                    if (lang == "en") "Celsius" else "攝氏"
                 }
 
-                val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                val speechText = "${greetingClean}，${username}！" +
-                                "現在時間 ${timeState.time}。" +
-                                "今日晨間亮點簡報：${timeState.secondaryMessage}" +
-                                weatherTextForTTS +
-                                eventTextForTTS +
-                                goalTextForTTS +
-                                "。"
-                                
+                val speechText = if (lang == "en") {
+                    val englishGreeting = when {
+                        timeState.greeting.contains("早") -> "Good morning"
+                        timeState.greeting.contains("午") -> "Good afternoon"
+                        timeState.greeting.contains("晚") -> "Good evening"
+                        else -> "Hello"
+                    }
+                    val eventText = if (events.isNotEmpty()) {
+                        "You have ${events.size} calendar events today. The first event is ${events.first().title}."
+                    } else {
+                        "You have no calendar events scheduled for today."
+                    }
+                    val weatherText = if (weather.condition.isNotEmpty()) {
+                        "The weather is currently ${weather.condition}, with a temperature of around ${weather.currentTemp} degrees $weatherUnitSymbol."
+                    } else {
+                        ""
+                    }
+                    val goalText = if (goalSuggestion.isNotBlank()) {
+                        "Your recommended workspace focus target is: ${goalSuggestion}."
+                    } else {
+                        ""
+                    }
+                    "$englishGreeting, $username! The current local time is ${timeState.time}. Today's brief highlight is: ${timeState.secondaryMessage}. $weatherText $eventText $goalText"
+                } else if (lang == "zh_HK") {
+                    val eventText = if (events.isNotEmpty()) {
+                        "，您今日有 ${events.size} 項日程，第一項活動係 ${events.first().title}"
+                    } else {
+                        "，今日您無任何日程安排"
+                    }
+                    val weatherText = if (weather.condition.isNotEmpty()) {
+                        "，今日天氣狀況係 ${weather.condition}，氣溫大約係 ${weatherUnitSymbol} ${weather.currentTemp}度"
+                    } else {
+                        ""
+                    }
+                    val goalText = if (goalSuggestion.isNotBlank()) {
+                        "，今日智慧小助手推薦目標係：${goalSuggestion}"
+                    } else {
+                        ""
+                    }
+                    val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
+                    "${greetingClean}，${username}！而家時間 ${timeState.time}。今日晨間導讀亮點：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                } else if (lang == "ja") {
+                    val eventText = if (events.isNotEmpty()) {
+                        "、本日の予定は ${events.size} 件あります。最初の予定は ${events.first().title} です"
+                    } else {
+                        "、本日の予定はありません"
+                    }
+                    val weatherText = if (weather.condition.isNotEmpty()) {
+                        "、今日の天気は ${weather.condition}、気温は約 ${weather.currentTemp} 度です"
+                    } else {
+                        ""
+                    }
+                    val goalText = if (goalSuggestion.isNotBlank()) {
+                        "、今日のおすすめ目標は：${goalSuggestion} です"
+                    } else {
+                        ""
+                    }
+                    val greetingClean = when {
+                        timeState.greeting.contains("早") -> "おはようございます"
+                        timeState.greeting.contains("午") -> "こんにちは"
+                        timeState.greeting.contains("晚") -> "こんばんは"
+                        else -> "こんにちは"
+                    }
+                    "${greetingClean}、${username}さん！現在の時刻は ${timeState.time} です。今日のブリーフィングハイライト：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                } else {
+                    val eventText = if (events.isNotEmpty()) {
+                        "，您今天有 ${events.size} 筆行事曆日程，第一項活動是 ${events.first().title}"
+                    } else {
+                        "，今天您沒有安排行事曆活動"
+                    }
+                    val weatherText = if (weather.condition.isNotEmpty()) {
+                        "，今天天氣狀況是 ${weather.condition}，氣溫大約是 ${weatherUnitSymbol} ${weather.currentTemp}度"
+                    } else {
+                        ""
+                    }
+                    val goalText = if (goalSuggestion.isNotBlank()) {
+                        "，今日智慧小助手推薦目標為：${goalSuggestion}"
+                    } else {
+                        ""
+                    }
+                    val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
+                    "${greetingClean}，${username}！現在時間 ${timeState.time}。今日晨間亮點簡報：${timeState.secondaryMessage}${weatherText}${eventText}${goalText}。"
+                }
+
                 ttsManager.speak(speechText)
             }
         }
@@ -2638,6 +2703,7 @@ fun SettingsScreen(
     var editTimeFormat24State by remember { mutableStateOf(settings.is24HourFormat) }
     var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
     var editIsBiometricEnabled by remember { mutableStateOf(settings.isBiometricEnabled) }
+    var editTtsLanguage by remember { mutableStateOf(settings.ttsLanguage) }
 
 
     val context = LocalContext.current
@@ -2699,7 +2765,8 @@ fun SettingsScreen(
                             displayedNewsCount = editDisplayedNewsCount.toInt(),
                             is24HourFormat = editTimeFormat24State,
                             geminiModelSelected = editGeminiModelSelected,
-                            isBiometricEnabled = editIsBiometricEnabled
+                            isBiometricEnabled = editIsBiometricEnabled,
+                            ttsLanguage = editTtsLanguage
                         )
                         onSave(updated)
                         android.widget.Toast.makeText(context, "設定已成功儲存！", android.widget.Toast.LENGTH_SHORT).show()
@@ -3012,6 +3079,46 @@ fun SettingsScreen(
                             onCheckedChange = { editTimeFormat24State = it },
                             testTag = "time_format_settings_switch"
                         )
+
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+
+                        Text("語音簡報導讀語言 (TTS)", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "為您專屬訂製的晨間小助手語音朗讀，提供多國常用語言與地方特色語音導讀體驗。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "zh_TW" to "繁中",
+                                "zh_HK" to "粵語",
+                                "zh_CN" to "簡中",
+                                "en" to "EN",
+                                "ja" to "日本語"
+                            ).forEach { (code, label) ->
+                                val selected = editTtsLanguage == code
+                                Button(
+                                    onClick = { editTtsLanguage = code },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selected) Color(0xFF10B981) else Color(0xFF1E293B),
+                                        contentColor = if (selected) Color.White else Color(0xFF94A3B8)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .testTag("tts_language_${code}_button")
+                                ) {
+                                    Text(label, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
                     }
                 }
 

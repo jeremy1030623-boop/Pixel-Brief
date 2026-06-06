@@ -11,6 +11,7 @@ class MorningTtsManager(
     private var tts: TextToSpeech? = null
     private var isReady = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var currentLangCode = "zh_TW"
 
     init {
         // 初始化 Android 原生 TTS
@@ -19,30 +20,42 @@ class MorningTtsManager(
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            // 設定語言為繁體中文（或跟隨系統設定）
-            val result = tts?.setLanguage(Locale.TRADITIONAL_CHINESE)
-            if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                isReady = true
-                // 可調語速（0.5 ~ 2.0），晨間建議 1.0 ~ 1.1 較為溫柔舒適
-                tts?.setSpeechRate(1.0f) 
+            isReady = true
+            setLanguage(currentLangCode)
+            // 可調語速（0.5 ~ 2.0），晨間建議 1.0 ~ 1.1 較為溫柔舒適
+            tts?.setSpeechRate(1.0f) 
 
-                // 設定播放進度監聽器
-                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    
-                    override fun onDone(utteranceId: String?) {
-                        mainHandler.post {
-                            onSpeakingDone()
-                        }
+            // 設定播放進度監聽器
+            tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                
+                override fun onDone(utteranceId: String?) {
+                    mainHandler.post {
+                        onSpeakingDone()
                     }
+                }
 
-                    override fun onError(utteranceId: String?) {
-                        mainHandler.post {
-                            onSpeakingDone()
-                        }
+                override fun onError(utteranceId: String?) {
+                    mainHandler.post {
+                        onSpeakingDone()
                     }
-                })
+                }
+            })
+        }
+    }
+
+    fun setLanguage(langCode: String) {
+        currentLangCode = langCode
+        if (isReady) {
+            val locale = when (langCode) {
+                "zh_TW" -> Locale.TRADITIONAL_CHINESE
+                "zh_CN" -> Locale.SIMPLIFIED_CHINESE
+                "en" -> Locale.US
+                "ja" -> Locale.JAPANESE
+                "zh_HK" -> Locale("zh", "HK")
+                else -> Locale.TRADITIONAL_CHINESE
             }
+            tts?.setLanguage(locale)
         }
     }
 

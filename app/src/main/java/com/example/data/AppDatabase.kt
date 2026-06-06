@@ -43,7 +43,9 @@ data class UserSettings(
     val avatarEmoji: String = "🦊",
     val avatarGradientIndex: Int = 0,
     // Security & Biometrics
-    val isBiometricEnabled: Boolean = false
+    val isBiometricEnabled: Boolean = false,
+    // Language & TTS Settings
+    val ttsLanguage: String = "zh_TW"
 )
 
 @Dao
