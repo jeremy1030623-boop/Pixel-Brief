@@ -42,11 +42,8 @@ data class UserSettings(
     // Custom Avatar Settings
     val avatarEmoji: String = "🦊",
     val avatarGradientIndex: Int = 0,
-    // Google Sign In integration
-    val isGoogleLoggedIn: Boolean = false,
-    val googleEmail: String = "",
-    val googleDisplayName: String = "",
-    val googlePhotoUrl: String = ""
+    // Security & Biometrics
+    val isBiometricEnabled: Boolean = false
 )
 
 @Dao

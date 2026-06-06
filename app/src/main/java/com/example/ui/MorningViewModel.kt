@@ -409,7 +409,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 
                 val startTime = android.os.SystemClock.elapsedRealtime()
                 
-                var healthData = HealthConnectHelper.HealthData(7.5f, 15, 2, "良好", 8432, 68)
+                var healthData = HealthConnectHelper.HealthData()
                 if (isHCEnabled && HealthConnectHelper.isSdkAvailable(context)) {
                     healthData = HealthConnectHelper.readHealthData(context)
                 } else {
@@ -495,44 +495,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 triggerInteractionFeedback("個人檔案客製調整成功！新頭像、配色與主題已無縫融入奢華版面 👑")
             } catch (e: Throwable) {
                 android.util.Log.e("MorningViewModel", "Exception during updateUserSettings", e)
-            }
-        }
-    }
-
-    fun loginWithGoogle(email: String, displayName: String, photoUrl: String = "") {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val current = _userSettings.value ?: UserSettings()
-                val updated = current.copy(
-                    isGoogleLoggedIn = true,
-                    googleEmail = email,
-                    googleDisplayName = displayName,
-                    googlePhotoUrl = photoUrl,
-                    username = if (displayName.isNotBlank()) displayName else current.username,
-                    selectedCalendarAccount = if (email.isNotBlank()) email else current.selectedCalendarAccount
-                )
-                getDb()?.userSettingsDao()?.saveUserSettings(updated)
-                triggerInteractionFeedback("Google 登入成功！已同步您的行事曆帳戶 $email 🚀")
-            } catch (e: Throwable) {
-                android.util.Log.e("MorningViewModel", "Google login failed", e)
-            }
-        }
-    }
-
-    fun logoutGoogle() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val current = _userSettings.value ?: UserSettings()
-                val updated = current.copy(
-                    isGoogleLoggedIn = false,
-                    googleEmail = "",
-                    googleDisplayName = "",
-                    googlePhotoUrl = ""
-                )
-                getDb()?.userSettingsDao()?.saveUserSettings(updated)
-                triggerInteractionFeedback("已登出 Google 帳戶 👤")
-            } catch (e: Throwable) {
-                android.util.Log.e("MorningViewModel", "Google logout failed", e)
             }
         }
     }

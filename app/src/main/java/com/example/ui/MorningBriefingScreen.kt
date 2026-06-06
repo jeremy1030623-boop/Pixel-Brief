@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -39,7 +42,10 @@ import kotlinx.coroutines.delay
 import com.example.model.*
 import com.example.model.WeatherInfo
 import com.example.data.UserSettings
-import com.example.auth.GoogleSignInHelper
+import androidx.compose.ui.draw.scale
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.lazy.LazyColumn
 import com.example.ui.theme.Typography
 import com.example.ui.theme.*
@@ -123,6 +129,7 @@ sealed class ScreenState {
     object WeatherDetail : ScreenState()
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val weather by viewModel.weatherInfo.collectAsState()
@@ -135,6 +142,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val goalSuggestion by viewModel.goalSuggestion.collectAsState()
+    val tasksList by viewModel.tasksList.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -194,11 +202,59 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
 
     val backgroundBrush = remember(weather.condition, isNight) { getBackgroundBrush(weather.condition, isNight) }
     var visible by remember { mutableStateOf(false) }
+    var weatherVisible by remember { mutableStateOf(false) }
+    var agendaVisible by remember { mutableStateOf(false) }
+    var healthVisible by remember { mutableStateOf(false) }
+    var newsVisible by remember { mutableStateOf(false) }
     var selectedNewsItem by remember { mutableStateOf<NewsItem?>(null) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isWeatherDetailOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    val isBiometricEnabled = userSettings?.isBiometricEnabled ?: false
+    var isAppUnlocked by remember { mutableStateOf(false) }
+
+    val activity = context as? FragmentActivity
+    val triggerUnlock = remember {
+        {
+            if (activity != null) {
+                SecurityHelper.authenticate(
+                    activity = activity,
+                    onSuccess = {
+                        isAppUnlocked = true
+                    },
+                    onError = { error ->
+                        android.util.Log.d("SecurityLock", "Unlock error: $error")
+                    }
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(userSettings) {
+        val settings = userSettings
+        if (settings != null && settings.isBiometricEnabled && !isAppUnlocked) {
+            triggerUnlock()
+        }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, isBiometricEnabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (isBiometricEnabled) {
+                    isAppUnlocked = false
+                    triggerUnlock()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val calendarPermissionGranted = remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -253,13 +309,47 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         visible = true
     }
 
+    LaunchedEffect(visible, isRefreshing) {
+        if (visible) {
+            if (isRefreshing) {
+                // Dim/hide cards while refreshing so they bounce back gracefully when done
+                weatherVisible = false
+                agendaVisible = false
+                healthVisible = false
+                newsVisible = false
+            } else {
+                // Sequenced delays for the boot ceremony:
+                // Spaced by ~200ms with custom Spring settings
+                delay(100)
+                weatherVisible = true
+                delay(200)
+                agendaVisible = true
+                delay(200)
+                healthVisible = true
+                delay(200)
+                newsVisible = true
+            }
+        } else {
+            weatherVisible = false
+            agendaVisible = false
+            healthVisible = false
+            newsVisible = false
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(brush = backgroundBrush)
     ) {
-        // Dynamic, high-fidelity atmosphere overlay reflecting current weather
-        WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
+        if (isBiometricEnabled && !isAppUnlocked) {
+            SecurityLockScreen(
+                activeTheme = activePremiumTheme,
+                onUnlockClick = triggerUnlock
+            )
+        } else {
+            // Dynamic, high-fidelity atmosphere overlay reflecting current weather
+            WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
 
         SnackbarHost(
             hostState = snackbarHostState,
@@ -304,129 +394,89 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                     SettingsScreen(
                         settings = userSettings ?: UserSettings(),
                         onBack = { isSettingsOpen = false },
-                        onSave = { updated -> viewModel.updateUserSettings(updated) },
-                        onGoogleLogin = { email, name ->
-                            viewModel.loginWithGoogle(email, name)
-                        },
-                        onGoogleLogout = {
-                            viewModel.logoutGoogle()
-                        }
+                        onSave = { updated -> viewModel.updateUserSettings(updated) }
                     )
                 }
                 is ScreenState.Home -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .padding(horizontal = 24.dp)
-                            .verticalScroll(rememberScrollState())
+                    PullToRefreshBox(
+                        isRefreshing = isRefreshing,
+                        onRefresh = { viewModel.fetchData(isManual = true) },
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        AnimatedVisibility(
-                            visible = visible,
-                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .padding(horizontal = 24.dp)
+                                .verticalScroll(rememberScrollState())
                         ) {
-                            GreetingSection(
-                                username = username,
-                                avatarEmoji = userSettings?.avatarEmoji ?: "🦊",
-                                avatarGradientIndex = userSettings?.avatarGradientIndex ?: 0,
-                                greeting = timeState.greeting,
-                                time = timeState.time,
-                                secondaryMessage = timeState.secondaryMessage,
-                                isInteraction = timeState.isInteraction,
-                                weather = weather,
-                                events = events,
-                                weatherUnit = userSettings?.weatherUnit ?: "C",
-                                isNight = isNight,
-                                goalSuggestion = goalSuggestion,
-                                isRefreshing = isRefreshing,
-                                onSettingsClick = { isSettingsOpen = true },
-                                onProfileChange = { newName, newEmoji, newGradientIndex ->
-                                    val current = userSettings ?: UserSettings()
-                                    viewModel.updateUserSettings(
-                                        current.copy(
-                                            username = newName,
-                                            avatarEmoji = newEmoji,
-                                            avatarGradientIndex = newGradientIndex
-                                        )
-                                    )
-                                }
-                            )
-                        }
-                        
-                        // Google Sign-In promo banner
-                        if (userSettings?.isGoogleLoggedIn != true) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                                    .clickable { isSettingsOpen = true },
-                                shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.5f) else Color(0xFFEFF6FF).copy(alpha = 0.9f)
-                                ),
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = if (isNight) Color(0xFF38BDF8).copy(alpha = 0.4f) else Color(0xFF93C5FD)
-                                )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(100.dp))
-                                            .background(Color.White),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("G", fontWeight = FontWeight.Bold, color = Color(0xFF4285F4), fontSize = 18.sp)
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "同步您專屬的 Google 帳戶",
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = if (isNight) Color.White else Color(0xFF1E3A8A)
+                                GreetingSection(
+                                    username = username,
+                                    avatarEmoji = userSettings?.avatarEmoji ?: "🦊",
+                                    avatarGradientIndex = userSettings?.avatarGradientIndex ?: 0,
+                                    greeting = timeState.greeting,
+                                    time = timeState.time,
+                                    secondaryMessage = timeState.secondaryMessage,
+                                    isInteraction = timeState.isInteraction,
+                                    weather = weather,
+                                    events = events,
+                                    weatherUnit = userSettings?.weatherUnit ?: "C",
+                                    isNight = isNight,
+                                    goalSuggestion = goalSuggestion,
+                                    isRefreshing = isRefreshing,
+                                    isGoalSuggestionAdded = tasksList.any { it.text == goalSuggestion },
+                                    onSettingsClick = { isSettingsOpen = true },
+                                    onAddTask = { text -> viewModel.addTask(text) },
+                                    onProfileChange = { newName, newEmoji, newGradientIndex ->
+                                        val current = userSettings ?: UserSettings()
+                                        viewModel.updateUserSettings(
+                                            current.copy(
+                                                username = newName,
+                                                avatarEmoji = newEmoji,
+                                                avatarGradientIndex = newGradientIndex
+                                            )
                                         )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "連線 Google 帳戶並客製全功能智能日程與行事曆晨間簡報資訊！",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF2563EB)
-                                        )
                                     }
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = "前往連線",
-                                        tint = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF2563EB),
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + expandVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f))
+                            ) {
+                                DailyGoalsCard(
+                                    tasks = tasksList,
+                                    isNight = isNight,
+                                    activeTheme = activePremiumTheme,
+                                    onAddTask = { text -> viewModel.addTask(text) },
+                                    onToggleTask = { task -> viewModel.toggleTask(task) },
+                                    onDeleteTask = { task -> viewModel.deleteTask(task) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            AnimatedVisibility(
+                                visible = agendaVisible,
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+                            ) {
+                                AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
+                                    checkAndRequestCalendarPermission()
                                 }
                             }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        AnimatedVisibility(
-                            visible = visible,
-                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) { it / 2 }
-                        ) {
-                            AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
-                                checkAndRequestCalendarPermission()
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        AnimatedVisibility(
-                            visible = visible,
-                            enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) { it / 3 }
-                        ) {
-                        WidgetGrid(
+                            
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
+                            WidgetGrid(
                                 sleepInfo = sleepInfo,
                                 weather = weather,
                                 events = events,
@@ -440,6 +490,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 newsMode = userSettings?.newsMode ?: "local",
                                 isNight = isNight,
                                 activeTheme = activePremiumTheme,
+                                healthVisible = healthVisible,
+                                weatherVisible = weatherVisible,
+                                newsVisible = newsVisible,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = { checkAndRequestCalendarPermission() },
@@ -452,162 +505,38 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     isWeatherDetailOpen = true
                                 }
                             )
+                            
+                            Spacer(modifier = Modifier.height(64.dp))
                         }
-                        
-                        Spacer(modifier = Modifier.height(64.dp))
                     }
                 }
             }
+        }
         }
     }
 }
 
 @Composable
 fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
-    val (tagName, tagColor, tagBg) = getNewsTagInfo(item.title, isNight)
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
+            .padding(24.dp)
             .statusBarsPadding()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-        ) {
-            // Elegant top brand bar
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(RoundedCornerShape(100))
-                            .background(tagColor)
-                    )
-                    Text(
-                        text = "AI COGNITIVE BRIEFING",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.ExtraBold, 
-                            letterSpacing = 1.5.sp
-                        ),
-                        color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.5f)
-                    )
-                }
-                
-                // Segment badge
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(100))
-                        .background(tagBg)
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = tagName,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        color = tagColor
-                    )
-                }
-            }
-            
-            // Headline Title
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Text(
-                text = item.title,
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    lineHeight = 42.sp,
-                    letterSpacing = 0.2.sp
-                ),
+                item.title,
+                style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
                 color = if (isNight) Color.White else Color(0xFF0F172A)
             )
-            
-            Spacer(modifier = Modifier.height(14.dp))
-            
-            // Meta Row information
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Newspaper,
-                    contentDescription = null,
-                    tint = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f),
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = "Google News RSS 精選 • AI 智能精華提煉版",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f),
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            
-            HorizontalDivider(
-                color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.1f),
-                thickness = 1.dp
-            )
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // AI Analysis/Highlight Box
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.6f) else Color(0xFFF1F5F9)
-                ),
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = if (isNight) Color.White.copy(alpha = 0.1f) else Color(0xFFE2E8F0)
-                )
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "AI Highlights",
-                            tint = if (isNight) AuroraMint else Color(0xFF0D9488),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "AI 智能簡報精華",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isNight) Color.White else Color(0xFF0F172A)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "本篇內容由端側/雲端 Gemini 進行高精準理解，旨在 20 秒內協助您完整洞察核心事件進展，大幅節省晨間閱讀負荷。",
-                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp),
-                        color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.5f)
-                    )
-                }
-            }
-            
-            // Headline Body content paragraph
+            Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = item.summary,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    lineHeight = 32.sp,
-                    letterSpacing = 0.5.sp
-                ),
-                color = if (isNight) Color(0xFFE2E8F0) else Color(0xFF334155),
-                fontWeight = FontWeight.Normal
+                item.summary,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isNight) Color(0xFFF1F5F9) else Color(0xFF334155)
             )
             
             val isUrlValid = remember(item.url) {
@@ -615,7 +544,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
             }
             if (isUrlValid) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                Spacer(modifier = Modifier.height(36.dp))
+                Spacer(modifier = Modifier.height(32.dp))
                 Button(
                     onClick = {
                         try {
@@ -625,35 +554,27 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isNight) AuroraMint else Color(0xFF0F172A),
-                        contentColor = if (isNight) Color(0xFF0F172A) else Color.White
+                        containerColor = AuroraMint,
+                        contentColor = Color(0xFF0F172A)
                     ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("open_news_url_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                    modifier = Modifier.fillMaxWidth().testTag("open_news_url_button"),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞", modifier = Modifier.size(18.dp))
+                    Icon(imageVector = Icons.Default.Language, contentDescription = "閱讀新聞")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("閱讀完整即時新聞報導", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("閱讀完整即時新聞報導", fontWeight = FontWeight.SemiBold)
                 }
             }
             
-            Spacer(modifier = Modifier.height(110.dp)) // Safe padding for the back action floating button
+            Spacer(modifier = Modifier.height(100.dp)) // Padding for FAB so it doesn't overlap text
         }
         
-        // Clean Floating Action Back button
         FloatingActionButton(
             onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = 24.dp, end = 24.dp)
-                .navigationBarsPadding(),
-            containerColor = if (isNight) AuroraMint else Color(0xFF0F172A),
-            contentColor = if (isNight) Color(0xFF0F172A) else Color.White,
-            shape = RoundedCornerShape(18.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onTertiary,
+            shape = MaterialTheme.shapes.large
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
@@ -952,7 +873,9 @@ fun GreetingSection(
     isNight: Boolean,
     goalSuggestion: String,
     isRefreshing: Boolean,
+    isGoalSuggestionAdded: Boolean,
     onSettingsClick: () -> Unit,
+    onAddTask: (String) -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
 ) {
     var isEditingProfile by remember { mutableStateOf(false) }
@@ -1249,7 +1172,460 @@ fun GreetingSection(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        TimeGreetingText(time, eventText, weather, weatherUnit, isNight, goalSuggestion)
+        TimeGreetingText(time, eventText, weather, weatherUnit, isNight)
+
+        if (goalSuggestion.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            GoalSuggestionCard(
+                goalSuggestion = goalSuggestion,
+                isNight = isNight,
+                isTaskAdded = isGoalSuggestionAdded,
+                onAddTask = onAddTask
+            )
+        }
+    }
+}
+
+@Composable
+fun GoalSuggestionCard(
+    goalSuggestion: String,
+    isNight: Boolean,
+    isTaskAdded: Boolean,
+    onAddTask: (String) -> Unit
+) {
+    if (goalSuggestion.isBlank()) return
+
+    // Setup an infinite transition for subtle, beautiful interactive animation (pulsing glow/size of the lightbulb)
+    val infiniteTransition = rememberInfiniteTransition(label = "goal_icon_glow")
+    val iconScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1250, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val iconShadowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1250, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shadowAlpha"
+    )
+
+    // Layout colors based on isNight
+    val containerColor = if (isNight) {
+        Color(0xFF1E293B).copy(alpha = 0.85f) // Rich celestial twilight dark indigo slate
+    } else {
+        Color(0xFFF1F5F9).copy(alpha = 0.95f) // Soft cool light mineral slate
+    }
+
+    val primaryTextColor = if (isNight) Color.White else Color(0xFF1E293B)
+    val secondaryTextColor = if (isNight) Color.White.copy(alpha = 0.8f) else Color(0xFF334155)
+    val borderBrush = if (isNight) {
+        Brush.linearGradient(listOf(AuroraMint.copy(alpha = 0.5f), AuroraLavender.copy(alpha = 0.3f)))
+    } else {
+        Brush.linearGradient(listOf(Color(0xFF10B981).copy(alpha = 0.4f), Color(0xFF3B82F6).copy(alpha = 0.3f)))
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.5.dp, borderBrush),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Glow animated lightbulb container
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isNight) Color(0xFF065F46).copy(alpha = 0.35f)
+                            else Color(0xFFD1FAE5)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        drawCircle(
+                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else Color(0xFF10B981).copy(alpha = iconShadowAlpha * 0.4f),
+                            radius = size.width * 0.42f * iconScale
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Lightbulb,
+                        contentDescription = "💡",
+                        tint = if (isNight) AuroraMint else Color(0xFF047857),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "DAILY INSPIRATION",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        ),
+                        color = if (isNight) AuroraMint.copy(alpha = 0.8f) else Color(0xFF047857)
+                    )
+                    Text(
+                        text = "💡 今日智慧生活目標",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = primaryTextColor
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Body suggestion text
+            Text(
+                text = goalSuggestion,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                color = secondaryTextColor,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action button to accept challenge and set as a Task
+            Button(
+                onClick = {
+                    if (!isTaskAdded) {
+                        onAddTask(goalSuggestion)
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                enabled = !isTaskAdded,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isNight) AuroraMint else Color(0xFF059669),
+                    contentColor = if (isNight) Color(0xFF0F172A) else Color.White,
+                    disabledContainerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFE2E8F0),
+                    disabledContentColor = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF94A3B8)
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("accept_daily_goal_button")
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isTaskAdded) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isTaskAdded) "已加入今日待辦清單 🎉" else "🌟 接受並設為今日待辦挑戰",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.3.sp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DailyGoalsCard(
+    tasks: List<com.example.data.TaskItem>,
+    isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
+    onAddTask: (String) -> Unit,
+    onToggleTask: (com.example.data.TaskItem) -> Unit,
+    onDeleteTask: (com.example.data.TaskItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val totalCount = tasks.size
+    val completedCount = tasks.count { it.isCompleted }
+    val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
+    
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 100f),
+        label = "daily_goals_progress"
+    )
+
+    var newGoalText by remember { mutableStateOf("") }
+
+    GlassmorphicCard(
+        modifier = modifier,
+        containerColor = activeTheme.cardBg,
+        borderColors = activeTheme.cardBorderGlowColors,
+        glowColor = activeTheme.accentColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            // Header with visual icon & title
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(activeTheme.accentColor.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Goals Icon",
+                        tint = activeTheme.accentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                
+                Column {
+                    Text(
+                        text = "🎯 今日生活目標",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = Color.White
+                    )
+                    
+                    if (totalCount > 0) {
+                        val progressMessage = when {
+                            completedCount == totalCount -> "太棒了！已完成所有今日目標！🌟"
+                            completedCount > 0 -> "加油！已完成 $completedCount / $totalCount 個目標！💪"
+                            else -> "加油！今天還有 $totalCount 個目標等待挑戰！🚀"
+                        }
+                        Text(
+                            text = progressMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+
+            // Beautiful progress line if there is any task
+            if (totalCount > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "完成進度",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = activeTheme.accentColor
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    color = activeTheme.accentColor,
+                    trackColor = activeTheme.secondaryAccent.copy(alpha = 0.2f),
+                    strokeCap = StrokeCap.Round,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Goals list section
+            if (tasks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "無目標",
+                            tint = activeTheme.accentColor.copy(alpha = 0.4f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "今日尚未建立生活目標",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Text(
+                            text = "可接受上方的「今日智慧生活目標」\n或在下方新增自訂生活目標！🌟",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    tasks.forEach { item ->
+                        key(item.id) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (item.isCompleted) Color.White.copy(alpha = 0.04f)
+                                        else Color.White.copy(alpha = 0.08f)
+                                    )
+                                    .clickable { onToggleTask(item) }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .testTag("goal_item_${item.id}")
+                            ) {
+                                Checkbox(
+                                    checked = item.isCompleted,
+                                    onCheckedChange = { onToggleTask(item) },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = activeTheme.accentColor,
+                                        checkmarkColor = AuroraMidnight,
+                                        uncheckedColor = Color.White.copy(alpha = 0.4f)
+                                    ),
+                                    modifier = Modifier.testTag("goal_checkbox_${item.id}")
+                                )
+                                
+                                Spacer(modifier = Modifier.width(8.dp))
+                                
+                                Text(
+                                    text = item.text,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                        fontWeight = if (item.isCompleted) FontWeight.Normal else FontWeight.Medium
+                                    ),
+                                    color = if (item.isCompleted) Color.White.copy(alpha = 0.45f) else Color.White,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                IconButton(
+                                    onClick = { onDeleteTask(item) },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .testTag("delete_goal_button_${item.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "刪除目標",
+                                        tint = Color.White.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Interactive in-place input row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newGoalText,
+                    onValueChange = { newGoalText = it },
+                    placeholder = {
+                        Text(
+                            "新增自訂生活目標...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.4f)
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .testTag("add_custom_goal_input"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = activeTheme.accentColor,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                        focusedContainerColor = Color.White.copy(alpha = 0.02f),
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                
+                IconButton(
+                    onClick = {
+                        if (newGoalText.isNotBlank()) {
+                            onAddTask(newGoalText.trim())
+                            newGoalText = ""
+                        }
+                    },
+                    enabled = newGoalText.isNotBlank(),
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (newGoalText.isNotBlank()) activeTheme.accentColor
+                            else Color.White.copy(alpha = 0.1f)
+                        )
+                        .testTag("add_custom_goal_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "新增目標",
+                        tint = if (newGoalText.isNotBlank()) AuroraMidnight else Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1259,40 +1635,15 @@ fun TimeGreetingText(
     eventText: String,
     weather: WeatherInfo,
     weatherUnit: String,
-    isNight: Boolean,
-    goalSuggestion: String
+    isNight: Boolean
 ) {
-    val annotatedText = remember(time, eventText, weather, weatherUnit, isNight, goalSuggestion) {
-        buildAnnotatedString {
-            // Main news/weather briefing paragraph
-            val mainBrief = "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText"
-            append(mainBrief)
-            
-            if (goalSuggestion.isNotBlank()) {
-                append("\n\n")
-                withStyle(
-                    style = SpanStyle(
-                        fontWeight = FontWeight.Bold,
-                        color = if (isNight) AuroraMint else Color(0xFF047857) // Vivid emerald green accent for a readable/active suggestion callout
-                    )
-                ) {
-                    append("💡 每日目標建議  ")
-                }
-                withStyle(
-                    style = SpanStyle(
-                        fontWeight = FontWeight.Medium,
-                        color = if (isNight) Color.White.copy(alpha = 0.95f) else Color(0xFF1E293B)
-                    )
-                ) {
-                    append(goalSuggestion)
-                }
-            }
-        }
+    val mainBrief = remember(time, eventText, weather, weatherUnit, isNight) {
+        "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText"
     }
 
     Column {
         Text(
-            text = annotatedText,
+            text = mainBrief,
             style = MaterialTheme.typography.titleLarge.copy(lineHeight = 34.sp),
             color = if (isNight) Color.White else Color(0xFF1E293B),
             textAlign = TextAlign.Start,
@@ -1432,6 +1783,9 @@ fun WidgetGrid(
     newsMode: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    healthVisible: Boolean,
+    weatherVisible: Boolean,
+    newsVisible: Boolean,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
@@ -1440,41 +1794,58 @@ fun WidgetGrid(
     onWeatherClick: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (isSleepSynced) {
-            SleepCard(
-                sleep = sleepInfo,
+        AnimatedVisibility(
+            visible = healthVisible,
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+        ) {
+            if (isSleepSynced) {
+                SleepCard(
+                    sleep = sleepInfo,
+                    condition = weather.condition,
+                    lastSyncTime = lastSyncTime,
+                    isNight = isNight,
+                    activeTheme = activeTheme,
+                    onReSync = onSync
+                )
+            } else {
+                SyncHealthReminderCard(
+                    condition = weather.condition,
+                    isNight = isNight,
+                    activeTheme = activeTheme,
+                    onSync = onSync
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = weatherVisible,
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+        ) {
+            WeatherCard(
+                weather = weather,
                 condition = weather.condition,
-                lastSyncTime = lastSyncTime,
+                weatherUnit = weatherUnit,
                 isNight = isNight,
                 activeTheme = activeTheme,
-                onReSync = onSync
-            )
-        } else {
-            SyncHealthReminderCard(
-                condition = weather.condition,
-                isNight = isNight,
-                activeTheme = activeTheme,
-                onSync = onSync
+                onWeatherClick = onWeatherClick
             )
         }
-        WeatherCard(
-            weather = weather,
-            condition = weather.condition,
-            weatherUnit = weatherUnit,
-            isNight = isNight,
-            activeTheme = activeTheme,
-            onWeatherClick = onWeatherClick
-        )
-        NewsCard(
-            news = news,
-            condition = weather.condition,
-            displayedNewsCount = displayedNewsCount,
-            newsMode = newsMode,
-            isNight = isNight,
-            activeTheme = activeTheme,
-            onNewsModeChange = onNewsModeChange,
-            onItemClick = onNewsClick
-        )
+
+        AnimatedVisibility(
+            visible = newsVisible,
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+        ) {
+            NewsCard(
+                news = news,
+                condition = weather.condition,
+                displayedNewsCount = displayedNewsCount,
+                newsMode = newsMode,
+                isNight = isNight,
+                activeTheme = activeTheme,
+                onNewsModeChange = onNewsModeChange,
+                onItemClick = onNewsClick
+            )
+        }
     }
 }
 
@@ -1763,26 +2134,6 @@ fun WeatherCard(
     }
 }
 
-fun getNewsTagInfo(title: String, isNight: Boolean): Triple<String, Color, Color> {
-    return when {
-         title.contains("科技") || title.contains("AI") || title.contains("晶片") || title.contains("伺服器") || title.contains("台積電") || title.contains("輝達") || title.contains("Nvidia") -> {
-              Triple("科技前沿", if (isNight) Color(0xFFC084FC) else Color(0xFF7E22CE), if (isNight) Color(0xFFC084FC).copy(alpha = 0.15f) else Color(0xFFFAE8FF))
-         }
-         title.contains("防護") || title.contains("疫情") || title.contains("天氣") || title.contains("雨") || title.contains("颱風") || title.contains("氣溫") || title.contains("寒流") || title.contains("地震") -> {
-              Triple("氣候環境", if (isNight) Color(0xFF38BDF8) else Color(0xFF0369A1), if (isNight) Color(0xFF38BDF8).copy(alpha = 0.15f) else Color(0xFFE0F2FE))
-         }
-         title.contains("財經") || title.contains("股市") || title.contains("金融") || title.contains("外匯") || title.contains("台股") || title.contains("房市") || title.contains("投資") -> {
-              Triple("財經焦點", if (isNight) Color(0xFF34D399) else Color(0xFF047857), if (isNight) Color(0xFF34D399).copy(alpha = 0.15f) else Color(0xFFD1FAE5))
-         }
-         title.contains("政治") || title.contains("政府") || title.contains("立委") || title.contains("選舉") || title.contains("白宮") || title.contains("外交") || title.contains("國安") -> {
-              Triple("政經法規", if (isNight) Color(0xFFF87171) else Color(0xFFB91C1C), if (isNight) Color(0xFFF87171).copy(alpha = 0.15f) else Color(0xFFFEE2E2))
-         }
-         else -> {
-              Triple("全時頭條", if (isNight) AuroraMint else Color(0xFF0D9488), if (isNight) AuroraMint.copy(alpha = 0.15f) else Color(0xFFCCFBF1))
-         }
-    }
-}
-
 @Composable
 fun NewsCard(
     news: List<NewsItem>,
@@ -1800,51 +2151,25 @@ fun NewsCard(
         borderColors = activeTheme.cardBorderGlowColors,
         glowColor = activeTheme.accentColor
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            // Header row with "LIVE • AI 智能彙整" & "今日重點新聞"
+        Column(modifier = Modifier.padding(24.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Pulse-dot indicator
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(RoundedCornerShape(100))
-                                .background(if (isNight) AuroraMint else Color(0xFF10B981))
-                        )
-                        Text(
-                            text = "LIVE • AI 智能彙整",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = (if (isNight) AuroraMint else Color(0xFF059669)).copy(alpha = 0.9f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "今日重點新聞",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (isNight) Color.White else Color(0xFF0F172A)
-                    )
-                }
+                Text(
+                    "今日重點新聞",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
                 
                 // Beautiful capsules selector for Local vs International News
                 Row(
                     modifier = Modifier
-                        .background(
-                            if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFF0F172A).copy(alpha = 0.05f), 
-                            RoundedCornerShape(50)
-                        )
-                        .padding(3.dp),
+                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(50))
+                        .padding(2.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1853,186 +2178,57 @@ fun NewsCard(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (active) {
-                                        if (isNight) Color.White.copy(alpha = 0.2f) else Color.White
-                                    } else Color.Transparent,
+                                    if (active) Color.White.copy(alpha = 0.25f) else Color.Transparent,
                                     RoundedCornerShape(50)
                                 )
                                 .clickable { if (!active) onNewsModeChange(code) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (active) FontWeight.Black else FontWeight.Bold,
-                                color = if (active) {
-                                    if (isNight) Color.White else Color(0xFF0F172A)
-                                } else {
-                                    if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF0F172A).copy(alpha = 0.5f)
-                                }
+                                fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
+                                color = if (active) Color.White else Color.White.copy(alpha = 0.65f)
                             )
                         }
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
+            Spacer(modifier = Modifier.height(16.dp))
             if (news.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .background(
-                            if (isNight) Color.White.copy(alpha = 0.03f) else Color(0xFFF1F5F9).copy(alpha = 0.5f),
-                            RoundedCornerShape(16.dp)
-                        ), 
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp), 
-                            color = if (isNight) AuroraMint else Color(0xFF10B981), 
-                            strokeWidth = 2.5.dp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "偏好切換中，AI 即時精確生成中...", 
-                            style = MaterialTheme.typography.bodySmall, 
-                            color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.6f),
-                            fontWeight = FontWeight.Medium
-                        )
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFCE93D8), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
                     }
                 }
             } else {
                 val listToRender = news.take(displayedNewsCount)
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listToRender.forEach { item ->
-                        val (tagName, tagColor, tagBg) = getNewsTagInfo(item.title, isNight)
-                        
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onItemClick(item) },
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isNight) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.6f)
-                            ),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (isNight) Color.White.copy(alpha = 0.08f) else Color(0xFF0F172A).copy(alpha = 0.05f)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    // Tag list or badge
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(tagBg)
-                                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                                        ) {
-                                            Text(
-                                                text = tagName,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = tagColor
-                                            )
-                                        }
-                                        
-                                        Text(
-                                            text = "Google RSS • 即時",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.4f)
-                                        )
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    
-                                    // Headline
-                                    Text(
-                                        text = item.title,
-                                        style = MaterialTheme.typography.titleSmall.copy(
-                                            lineHeight = 20.sp,
-                                            letterSpacing = 0.2.sp
-                                        ),
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isNight) Color.White else Color(0xFF0F172A),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    
-                                    // News Summary preview inline!
-                                    if (item.summary.isNotBlank() && item.summary != "尚無摘要內容") {
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = item.summary,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                lineHeight = 16.sp
-                                            ),
-                                            color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.65f),
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    
-                                    // Footer guide text
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Language,
-                                            contentDescription = null,
-                                            tint = (if (isNight) AuroraMint else Color(0xFF0D9488)).copy(alpha = 0.8f),
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Text(
-                                            text = if (item.url.isNullOrBlank()) "點擊查看 AI 深度專案摘要分析" else "點擊查看 AI 深度摘要與完整新聞來源",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                            color = if (isNight) AuroraMint.copy(alpha = 0.8f) else Color(0xFF0D9488),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                                
-                                Spacer(modifier = Modifier.width(8.dp))
-                                
-                                // Clean interactive chevron
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.CenterVertically)
-                                        .size(28.dp)
-                                        .clip(RoundedCornerShape(100))
-                                        .background(if (isNight) Color.White.copy(alpha = 0.05f) else Color(0xFFF1F5F9)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowRight,
-                                        contentDescription = "查看詳情",
-                                        tint = (if (isNight) Color.White else Color(0xFF0F172A)).copy(alpha = 0.6f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
+                listToRender.forEachIndexed { index, item ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onItemClick(item) }
+                            .padding(vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (index < listToRender.size - 1) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }
@@ -2286,206 +2482,10 @@ fun formatTemperature(tempC: Int, unit: String): String {
 }
 
 @Composable
-fun SimulatedWeatherApp(
-    weather: WeatherInfo,
-    showFloatingButton: Boolean,
-    weatherUnit: String,
-    onBack: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF075E9B), Color(0xFF23A0E9))))
-            .statusBarsPadding()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("weather_app_back_arrow")
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "動態天氣預報 (系統外層)",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Current Weather Visual
-            WeatherAnimatedIcon(
-                condition = weather.condition,
-                isNight = false,
-                modifier = Modifier.size(120.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = formatTemperature(weather.currentTemp, weatherUnit),
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Black,
-                color = Color.White
-            )
-            Text(
-                text = weather.condition,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White.copy(alpha = 0.9f)
-            )
-            Text(
-                text = "高: ${formatTemperature(weather.maxTemp, weatherUnit)}  低: ${formatTemperature(weather.minTemp, weatherUnit)}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.7f)
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            val hourlyData = remember(weather) {
-                val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-                val list = mutableListOf<Pair<String, Int>>()
-                for (i in 0..11) {
-                    val h = (currentHour + i) % 24
-                    val timeStr = String.format("%02d:00", h)
-                    val angle = (h - 15) * Math.PI / 12
-                    val range = (weather.maxTemp - weather.minTemp).coerceAtLeast(4)
-                    val mid = (weather.maxTemp + weather.minTemp) / 2.0
-                    val modelTemp = (mid + Math.cos(angle) * (range / 2.0)).toInt()
-                    
-                    val temp = if (i == 0) {
-                        weather.currentTemp
-                    } else {
-                        val alpha = (i / 11.0).toFloat().coerceIn(0f, 1f)
-                        (weather.currentTemp * (1f - alpha) + modelTemp * alpha).toInt()
-                    }
-                    list.add(timeStr to temp)
-                }
-                list
-            }
-
-            // Hourly Temperature Trend Line Chart Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("每小時預報與氣溫趨勢 (12小時)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    TemperatureTrendLineChart(
-                        data = hourlyData,
-                        weatherUnit = weatherUnit,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Weather Details Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("詳細天氣狀態 (Open-Meteo)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("體感溫度", color = Color.White.copy(alpha = 0.7f))
-                        Text(formatTemperature(weather.apparentTemp, weatherUnit) + "°", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("相對濕度", color = Color.White.copy(alpha = 0.7f))
-                        Text("${weather.humidity}%", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("當日降雨機率", color = Color.White.copy(alpha = 0.7f))
-                        Text("${weather.precipitationProb}%", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("風速 (10米高度)", color = Color.White.copy(alpha = 0.7f))
-                        Text("${weather.windSpeed} km/h", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("最大紫外線指數", color = Color.White.copy(alpha = 0.7f))
-                        val uvText = when {
-                            weather.uvIndex < 3f -> "低量 (${weather.uvIndex})"
-                            weather.uvIndex < 6f -> "中等 (${weather.uvIndex})"
-                            weather.uvIndex < 8f -> "高量 (${weather.uvIndex})"
-                            weather.uvIndex < 11f -> "過量 (${weather.uvIndex})"
-                            else -> "極強 (${weather.uvIndex})"
-                        }
-                        Text(uvText, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(80.dp))
-        }
-
-        // Float button on bottom right corners
-        if (showFloatingButton) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 24.dp, end = 24.dp),
-                contentAlignment = Alignment.BottomEnd
-            ) {
-                Button(
-                    onClick = onBack,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFEA580C),
-                        contentColor = Color.White
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(50),
-                    modifier = Modifier
-                        .height(54.dp)
-                        .testTag("floating_back_widget_button")
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "返回早晨簡報",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun SettingsScreen(
     settings: UserSettings,
     onBack: () -> Unit,
-    onSave: (UserSettings) -> Unit,
-    onGoogleLogin: (String, String) -> Unit = { _, _ -> },
-    onGoogleLogout: () -> Unit = {}
+    onSave: (UserSettings) -> Unit
 ) {
     // Local copy of editable options state
     var editUsername by remember { mutableStateOf(settings.username) }
@@ -2503,28 +2503,10 @@ fun SettingsScreen(
     var editDisplayedNewsCount by remember { mutableStateOf(settings.displayedNewsCount.toFloat()) }
     var editTimeFormat24State by remember { mutableStateOf(settings.is24HourFormat) }
     var editGeminiModelSelected by remember { mutableStateOf(settings.geminiModelSelected) }
+    var editIsBiometricEnabled by remember { mutableStateOf(settings.isBiometricEnabled) }
 
 
     val context = LocalContext.current
-
-    var showSimulationDialog by remember { mutableStateOf(false) }
-    var simEmail by remember { mutableStateOf(if (settings.googleEmail.isNotBlank()) settings.googleEmail else "jeremy1030623@gmail.com") }
-    var simName by remember { mutableStateOf(if (settings.googleDisplayName.isNotBlank()) settings.googleDisplayName else "Jeremy") }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val account = GoogleSignInHelper.parseSignInResult(result.data)
-        if (account != null) {
-            val email = account.email ?: "jeremy1030623@gmail.com"
-            val displayName = account.displayName ?: "Jeremy"
-            onGoogleLogin(email, displayName)
-            editUsername = displayName
-            editCalendarAccountSelected = email
-        } else {
-            showSimulationDialog = true
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -2582,7 +2564,8 @@ fun SettingsScreen(
                             newsMode = editNewsMode,
                             displayedNewsCount = editDisplayedNewsCount.toInt(),
                             is24HourFormat = editTimeFormat24State,
-                            geminiModelSelected = editGeminiModelSelected
+                            geminiModelSelected = editGeminiModelSelected,
+                            isBiometricEnabled = editIsBiometricEnabled
                         )
                         onSave(updated)
                         android.widget.Toast.makeText(context, "設定已成功儲存！", android.widget.Toast.LENGTH_SHORT).show()
@@ -2609,120 +2592,31 @@ fun SettingsScreen(
                 // Section 1: 登入與帳號設定 (Login & Account)
                 item {
                     SettingsSectionCard(title = "一、帳號與登入") {
-                        if (settings.isGoogleLoggedIn) {
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.5f)),
-                                border = BorderStroke(1.dp, AuroraMint.copy(alpha = 0.5f)),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(100.dp))
-                                            .background(Color.White),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("G", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4285F4))
-                                    }
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = settings.googleDisplayName.ifBlank { settings.username },
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.bodyLarge
-                                        )
-                                        Text(
-                                            text = settings.googleEmail,
-                                            color = Color.White.copy(alpha = 0.6f),
-                                            style = MaterialTheme.typography.labelMedium
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(Color(0xFFD1FAE5))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("已連線", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF065F46))
-                                    }
-                                }
+                        if (editUsername.contains("Google") || editUsername.contains("gmail")) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AuroraMint)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("已登入：$editUsername", color = Color.White)
                             }
+                            Spacer(modifier = Modifier.height(16.dp))
                             Button(
-                                onClick = {
-                                    onGoogleLogout()
-                                    editUsername = "訪客"
-                                    editCalendarAccountSelected = "無"
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.15f)),
-                                border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                                onClick = { editUsername = "訪客" },
+                                colors = ButtonDefaults.buttonColors(containerColor = AuroraDeepIndigo),
                                 modifier = Modifier.fillMaxWidth().height(48.dp)
                             ) {
-                                Text("中斷 Google 帳戶連線", color = Color(0xFFFCA5A5), fontWeight = FontWeight.Bold)
+                                Text("登出並重設為訪客", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         } else {
                             Button(
-                                onClick = {
-                                    try {
-                                        val client = GoogleSignInHelper.getGoogleSignInClient(context)
-                                        googleSignInLauncher.launch(client.signInIntent)
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("Settings", "Failed starting sign-in client, falling back", e)
-                                        showSimulationDialog = true
-                                    }
-                                },
+                                onClick = { editUsername = "Google 使用者" },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                shape = RoundedCornerShape(100.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .testTag("google_login_button"),
-                                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .clip(RoundedCornerShape(100.dp))
-                                            .background(Color.White),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("G", fontWeight = FontWeight.Black, color = Color(0xFF4285F4), fontSize = 16.sp)
-                                    }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("G", fontWeight = FontWeight.ExtraBold, color = Color.Blue, fontSize = 20.sp)
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("使用 Google 帳戶登入", color = Color(0xFF334155), fontWeight = FontWeight.Bold)
+                                    Text("使用 Google 帳號登入", color = Color.DarkGray, fontWeight = FontWeight.Bold)
                                 }
-                            }
-                            
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
-                                Text("或", modifier = Modifier.padding(horizontal = 8.dp), color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp)
-                                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            
-                            OutlinedButton(
-                                onClick = { showSimulationDialog = true },
-                                border = BorderStroke(1.dp, AuroraMint.copy(alpha = 0.4f)),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AuroraMint),
-                                shape = RoundedCornerShape(100.dp),
-                                modifier = Modifier.fillMaxWidth().height(40.dp)
-                            ) {
-                                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("快速測試/行事曆帳戶授權連線", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                         
@@ -2986,89 +2880,53 @@ fun SettingsScreen(
                         )
                     }
                 }
+
+                // Section 7: 隱私與生物辨識防護 (Privacy & Biometrics)
+                item {
+                    SettingsSectionCard(title = "七、隱私與生物辨識防護") {
+                        val biometricAvailable = remember { SecurityHelper.isBiometricAvailable(context) }
+                        
+                        SettingsRow(
+                            label = "啟用安全鎖 (指紋、面孔或裝置密碼)",
+                            description = if (biometricAvailable) {
+                                "開啟後，每次開啟 App 或自背景返回時都會進行系統安全解鎖 verify，防護個人隱私與昨夜睡眠等敏感醫療與日程行程資訊安全"
+                            } else {
+                                "您的裝置不支援或尚未在系統設定中登記指紋/面部等密碼鎖 🔒"
+                            },
+                            checked = editIsBiometricEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    if (biometricAvailable) {
+                                        val act = context as? FragmentActivity
+                                        if (act != null) {
+                                            SecurityHelper.authenticate(
+                                                activity = act,
+                                                title = "驗證解鎖設定",
+                                                subtitle = "請感應一次生物識能 verify，核配解鎖管道能正常運作",
+                                                onSuccess = {
+                                                    editIsBiometricEnabled = true
+                                                    android.widget.Toast.makeText(context, "防護鎖設定連結成功！已安全守護 🛡️", android.widget.Toast.LENGTH_SHORT).show()
+                                                },
+                                                onError = { err ->
+                                                    android.widget.Toast.makeText(context, "安全鎖未配對成功：$err", android.widget.Toast.LENGTH_LONG).show()
+                                                }
+                                            )
+                                        } else {
+                                            editIsBiometricEnabled = true
+                                        }
+                                    } else {
+                                        android.widget.Toast.makeText(context, "裝置尚未登記任何安全螢幕鎖或不支持生物辨識裝置 🔒", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                } else {
+                                    editIsBiometricEnabled = false
+                                }
+                            },
+                            testTag = "biometric_settings_switch"
+                        )
+                    }
+                }
             }
         }
-    }
-
-    if (showSimulationDialog) {
-        AlertDialog(
-            onDismissRequest = { showSimulationDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(Color(0xFF4285F4)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("G", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("模擬 Google 登入授權", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "在模擬模式中（或裝置未配置 Google Services），您隨時可對此應用程式進行 Google 串聯，系統將深度同步此 Google 帳戶的日曆行事曆與個人喜好設定：",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-                    OutlinedTextField(
-                        value = simName,
-                        onValueChange = { simName = it },
-                        label = { Text("Google 顯示姓名") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AuroraMint,
-                            unfocusedBorderColor = AuroraSlate,
-                            focusedLabelColor = AuroraMint,
-                            unfocusedLabelColor = AuroraSlate
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = simEmail,
-                        onValueChange = { simEmail = it },
-                        label = { Text("Google 伺服器電子郵件") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AuroraMint,
-                            unfocusedBorderColor = AuroraSlate,
-                            focusedLabelColor = AuroraMint,
-                            unfocusedLabelColor = AuroraSlate
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showSimulationDialog = false
-                        onGoogleLogin(simEmail, simName)
-                        editUsername = simName
-                        editCalendarAccountSelected = simEmail
-                        android.widget.Toast.makeText(context, "Google 登入連線串接成功！", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AuroraMint)
-                ) {
-                    Text("授權並登入", color = AuroraMidnight, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSimulationDialog = false }) {
-                    Text("取消", color = Color.White.copy(alpha = 0.6f))
-                }
-            },
-            containerColor = Color(0xFF1E293B),
-            shape = RoundedCornerShape(24.dp)
-        )
     }
 }
 
@@ -3492,6 +3350,134 @@ fun TemperatureTrendLineChart(
                             y = topOffset + chartHeight + 10f
                         )
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SecurityLockScreen(
+    activeTheme: PremiumLayoutTheme,
+    onUnlockClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AuroraMidnight)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Ambient background color glow reflecting active theme
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(40.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            activeTheme.accentColor.copy(alpha = 0.2f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        GlassmorphicCard(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .padding(24.dp),
+            containerColor = activeTheme.cardBg,
+            borderColors = activeTheme.cardBorderGlowColors,
+            glowColor = activeTheme.accentColor
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Interactive glowing lock pulse ceremony
+                val infiniteTransition = rememberInfiniteTransition(label = "lock_glow_anim")
+                val pulseScale by infiniteTransition.animateFloat(
+                    initialValue = 0.94f,
+                    targetValue = 1.06f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1400, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulseScale"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .scale(pulseScale)
+                        .clip(CircleShape)
+                        .background(activeTheme.accentColor.copy(alpha = 0.15f))
+                        .border(2.dp, activeTheme.accentColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "密碼鎖屏狀態",
+                        tint = activeTheme.accentColor,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Pixel Brief 安全防護鎖",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    ),
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "為確保您的健康指數、昨夜深度睡眠數據、以及即時行事曆與今日生活目標等隱私安全，請進行裝置與生物特徵驗證來解鎖首頁。",
+                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                    color = Color.White.copy(alpha = 0.65f),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onUnlockClick,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = activeTheme.accentColor,
+                        contentColor = AuroraMidnight
+                    ),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("trigger_biometric_unlock_button")
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = "解鎖",
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "感應身分解鎖 🛡️",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
                 }
             }
         }

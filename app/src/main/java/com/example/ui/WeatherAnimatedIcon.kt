@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import kotlin.math.sin
 
@@ -19,6 +20,27 @@ fun WeatherAnimatedIcon(
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "weather_icon_anim")
+
+    // Gentle Breathing / Floating Animation of the entire weather icon
+    val breathingTranslationY by infiniteTransition.animateFloat(
+        initialValue = -6f,
+        targetValue = 6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathing_translation"
+    )
+
+    val breathingScale by infiniteTransition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathing_scale"
+    )
 
     // Sun Rotation & Heartbeat Animation
     val sunRotation by infiniteTransition.animateFloat(
@@ -161,7 +183,13 @@ fun WeatherAnimatedIcon(
         label = "star_sparkle"
     )
 
-    Canvas(modifier = modifier) {
+    Canvas(
+        modifier = modifier.graphicsLayer {
+            translationY = breathingTranslationY
+            scaleX = breathingScale
+            scaleY = breathingScale
+        }
+    ) {
         val w = size.width
         val h = size.height
         val cx = w / 2f

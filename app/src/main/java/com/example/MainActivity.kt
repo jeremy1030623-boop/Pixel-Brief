@@ -30,11 +30,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.Alignment
+import androidx.fragment.app.FragmentActivity
 import com.example.ui.MorningBriefingScreen
 import com.example.ui.theme.MyApplicationTheme
 import java.util.Calendar
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,52 +57,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     MorningBriefingScreen()
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun AICoreNotSupportedScreen(onRetry: () -> Unit, onBypass: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0F172A))
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = null,
-            tint = Color(0xFFF59E0B),
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "設備不支援",
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "此應用程式專為具備 Android AI Core (Gemini Nano) 的高效能設備設計。您的手機目前不符合執行此 AI 簡報應用的硬體需求。",
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.White.copy(alpha = 0.7f),
-            lineHeight = 24.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Button(
-                onClick = onRetry,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f))
-            ) {
-                Text("重新檢測", color = Color.White)
-            }
-            androidx.compose.material3.TextButton(onClick = onBypass) {
-                Text("繼續使用 (模擬模式)", color = Color(0xFF38BDF8))
             }
         }
     }

@@ -60,24 +60,24 @@ object HealthConnectHelper {
         return try {
             if (!isSdkAvailable(context)) {
                 Log.d("HealthConnectHelper", "Health Connect SDK is not supported or not installed")
-                return HealthData(7.5f, 15, 2, "良好", 8432, 68)
+                return HealthData()
             }
             readHealthDataInternal(context)
         } catch (e: Throwable) {
             Log.e("HealthConnectHelper", "Fatal error during readHealthData", e)
-            HealthData(0f)
+            HealthData()
         }
     }
 
     private suspend fun readHealthDataInternal(context: Context): HealthData {
         val client = androidx.health.connect.client.HealthConnectClient.getOrCreate(context)
         val permissions = getRequiredPermissions()
-        if (permissions.isEmpty()) return HealthData(0f)
+        if (permissions.isEmpty()) return HealthData()
 
         val granted = client.permissionController.getGrantedPermissions()
         if (!granted.containsAll(permissions)) {
             Log.d("HealthConnectHelper", "Health Connect Permissions have not been granted yet")
-            return HealthData(7.2f, 12, 1, "良好", 7850, 72) // Mock if partially granted for demo
+            return HealthData()
         }
 
         // Time range for the last 24 hours
