@@ -1146,43 +1146,13 @@ fun GreetingSection(
                             )
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "（自訂：點擊或長按頭像即可自訂專屬名稱與頭像 ✨）",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isNight) Color.White.copy(alpha = 0.35f) else Color(0xFF1E293B).copy(alpha = 0.35f),
-                        fontSize = 10.sp
-                    )
                 }
-            }
-            
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "設定",
-                    tint = if (isNight) Color.White else Color(0xFF0F172A),
-                    modifier = Modifier.size(20.dp)
-                )
             }
         }
         
         Spacer(modifier = Modifier.height(16.dp))
         
         TimeGreetingText(time, eventText, weather, weatherUnit, isNight)
-
-        if (goalSuggestion.isNotBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            GoalSuggestionCard(
-                goalSuggestion = goalSuggestion,
-                isNight = isNight,
-                isTaskAdded = isGoalSuggestionAdded,
-                onAddTask = onAddTask
-            )
-        }
     }
 }
 
