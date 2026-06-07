@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -3242,20 +3243,43 @@ fun WeatherAtmosphereOverlay(
                 val height = size.height
                 if (width <= 0 || height <= 0) return@Canvas
                 
-                // Draw slanted rain needles
-                val rainCount = 20
+                // Draw slanted rain needles with realistic speed and size layers to simulate lightweight particle system
+                val rainCount = 45
                 for (i in 0 until rainCount) {
+                    val layer = i % 3 // 0: background layer, 1: mid-ground layer, 2: foreground layer
+                    val speedFactor = when (layer) {
+                        0 -> 0.7f
+                        1 -> 1.0f
+                        else -> 1.4f
+                    }
+                    val length = when (layer) {
+                        0 -> 15f
+                        1 -> 30f
+                        else -> 55f
+                    }
+                    val stroke = when (layer) {
+                        0 -> 0.8.dp.toPx()
+                        1 -> 1.5.dp.toPx()
+                        else -> 2.3.dp.toPx()
+                    }
+                    val opacity = when (layer) {
+                        0 -> 0.07f
+                        1 -> 0.15f
+                        else -> 0.24f
+                    }
+                    
                     val xSeed = (i * 137.5f) % width
                     val ySeed = (i * 243.7f) % height
                     
-                    val currentY = (ySeed + fallProgress * height) % height
-                    val currentX = (xSeed + fallProgress * 150f) % width
+                    // Rain falling from top with offset wind drift
+                    val currentY = (ySeed + fallProgress * speedFactor * height) % height
+                    val currentX = (xSeed + fallProgress * speedFactor * 120f) % width
                     
                     drawLine(
-                        color = Color(0x1E818CF8),
+                        color = Color(0xFF93C5FD).copy(alpha = opacity),
                         start = androidx.compose.ui.geometry.Offset(currentX, currentY),
-                        end = androidx.compose.ui.geometry.Offset(currentX + 10f, currentY + 30f),
-                        strokeWidth = 1.5.dp.toPx()
+                        end = androidx.compose.ui.geometry.Offset(currentX + (12f * speedFactor), currentY + length),
+                        strokeWidth = stroke
                     )
                 }
                 
@@ -3281,15 +3305,35 @@ fun WeatherAtmosphereOverlay(
             }
         }
         "晴朗" -> {
-            // Elegant pulsing light rays (Sun beams) from top-right
-            val sunGlow by infiniteTransition.animateFloat(
-                initialValue = 0.12f,
-                targetValue = 0.25f,
+            // Elegant slow-rotating golden sun halo on the left side with scattered lens flare flecks
+            val sunRotation by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(4000, easing = FastOutSlowInEasing),
+                    animation = tween(35000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "sun_rotation"
+            )
+
+            val sunGlow by infiniteTransition.animateFloat(
+                initialValue = 0.15f,
+                targetValue = 0.30f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(5000, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
                 label = "sunny_glow"
+            )
+
+            val flarePulse by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(7000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "flare_pulse"
             )
             
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -3297,50 +3341,139 @@ fun WeatherAtmosphereOverlay(
                 val height = size.height
                 if (width <= 0 || height <= 0) return@Canvas
                 
-                // Pulsing solar source at top right
+                val centerLeftX = -30.dp.toPx()
+                val centerLeftY = height * 0.28f
+                val sunCenter = androidx.compose.ui.geometry.Offset(centerLeftX, centerLeftY)
+
+                // 1. Draw 8 rotating golden solar halo rays/bursts
+                rotate(degrees = sunRotation, pivot = sunCenter) {
+                    val rayCount = 8
+                    val maxRayLength = (width * 0.75f).coerceAtLeast(400.dp.toPx())
+                    for (r in 0 until rayCount) {
+                        val angleRad = (r * (2f * 3.14159265f / rayCount))
+                        val endX = centerLeftX + kotlin.math.cos(angleRad) * maxRayLength
+                        val endY = centerLeftY + kotlin.math.sin(angleRad) * maxRayLength
+                        
+                        drawLine(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFFFEF08A).copy(alpha = sunGlow * 0.35f),
+                                    Color(0xFFFDE047).copy(alpha = sunGlow * 0.08f),
+                                    Color.Transparent
+                                ),
+                                start = sunCenter,
+                                end = androidx.compose.ui.geometry.Offset(endX, endY)
+                            ),
+                            start = sunCenter,
+                            end = androidx.compose.ui.geometry.Offset(endX, endY),
+                            strokeWidth = 35.dp.toPx()
+                        )
+                    }
+                }
+
+                // 2. Draw soft layered golden radial gradients as core/halo on the left
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFFFBBF24).copy(alpha = sunGlow),
-                            Color(0xFFFCD34D).copy(alpha = sunGlow * 0.3f),
+                            Color(0xFFFEF3C7).copy(alpha = sunGlow * 1.2f),
+                            Color(0xFFFDE047).copy(alpha = sunGlow * 0.6f),
+                            Color(0xFFFEF08A).copy(alpha = sunGlow * 0.25f),
                             Color.Transparent
                         ),
-                        center = androidx.compose.ui.geometry.Offset(width, 0f),
-                        radius = width * 0.9f
+                        center = sunCenter,
+                        radius = width * 0.8f
                     ),
-                    radius = width * 0.9f,
-                    center = androidx.compose.ui.geometry.Offset(width, 0f)
+                    radius = width * 0.8f,
+                    center = sunCenter
                 )
+
+                // 3. Draw scattered golden light flecks (lens flares) that pulse gently
+                val flareSpots = listOf(
+                    Pair(androidx.compose.ui.geometry.Offset(width * 0.25f, height * 0.38f), 18.dp),
+                    Pair(androidx.compose.ui.geometry.Offset(width * 0.42f, height * 0.46f), 32.dp),
+                    Pair(androidx.compose.ui.geometry.Offset(width * 0.52f, height * 0.50f), 10.dp),
+                    Pair(androidx.compose.ui.geometry.Offset(width * 0.68f, height * 0.58f), 48.dp),
+                    Pair(androidx.compose.ui.geometry.Offset(width * 0.82f, height * 0.66f), 24.dp)
+                )
+                
+                flareSpots.forEachIndexed { index, (pos, baseRadius) ->
+                    val p = (flarePulse + index * 0.2f) % 1f
+                    val alpha = (1f - p) * 0.16f * sunGlow
+                    drawCircle(
+                        color = Color(0xFFFEF08A).copy(alpha = alpha),
+                        radius = baseRadius.toPx() * (0.7f + p * 0.6f),
+                        center = pos
+                    )
+                }
             }
         }
         "陰天", "多雲", "多雲時晴", "起霧" -> {
-            // Drifting mist cloud particles
+            // Elegant horizontal drifting cloud curtains / mist bands creating quiet morning atmosphere
             val driftProgress by infiniteTransition.animateFloat(
                 initialValue = 0f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(28000, easing = LinearEasing),
+                    animation = tween(26000, easing = LinearEasing),
                     repeatMode = RepeatMode.Restart
                 ),
                 label = "mist_drift"
             )
 
+            val mistPulse by infiniteTransition.animateFloat(
+                initialValue = 0.4f,
+                targetValue = 0.85f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(7000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "mist_pulse"
+            )
+            
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val width = size.width
                 val height = size.height
                 if (width <= 0 || height <= 0) return@Canvas
                 
+                // 1. Draw horizontal layered, semi-transparent cloud veil bands (雲霧遮簾)
+                val bandsCount = 4
+                for (i in 0 until bandsCount) {
+                    val verticalAnchor = height * (0.15f + i * 0.22f)
+                    val speedFactor = 0.6f + (i % 2) * 0.5f
+                    // Smooth slow horizontal movement of the curtain
+                    val xOffset = ((driftProgress * speedFactor + i * 0.25f) % 1f) * (width + 600.dp.toPx()) - 300.dp.toPx()
+                    
+                    val bandHeight = (100f + i * 50f).dp.toPx()
+                    val baseAlpha = 0.05f * mistPulse * (1f - (i % 3) * 0.12f)
+                    
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color(0xFFE2E8F0).copy(alpha = baseAlpha),
+                                Color(0xFFEFF6FF).copy(alpha = baseAlpha * 1.4f),
+                                Color(0xFFCBD5E1).copy(alpha = baseAlpha),
+                                Color.Transparent
+                            ),
+                            startY = verticalAnchor - bandHeight / 2f,
+                            endY = verticalAnchor + bandHeight / 2f
+                        ),
+                        topLeft = androidx.compose.ui.geometry.Offset(-100.dp.toPx(), verticalAnchor - bandHeight / 2f),
+                        size = androidx.compose.ui.geometry.Size(width + 200.dp.toPx(), bandHeight)
+                    )
+                }
+
+                // 2. Combine with drifting large fluffy cloud orbs for rich horizontal texture
                 val cloudCount = 3
                 for (i in 0 until cloudCount) {
-                    val basePercentY = 0.2f + i * 0.25f
-                    val x = ((driftProgress + i.toFloat() * 0.33f) % 1f) * (width + 300.dp.toPx()) - 150.dp.toPx()
-                    val radius = (100 + 35 * i).dp.toPx()
+                    val basePercentY = 0.22f + i * 0.26f
+                    val x = ((driftProgress + i.toFloat() * 0.33f) % 1f) * (width + 400.dp.toPx()) - 200.dp.toPx()
+                    val radius = (110 + 40 * i).dp.toPx()
                     
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.03f),
-                                Color.White.copy(alpha = 0.01f),
+                                Color.White.copy(alpha = 0.04f * mistPulse),
+                                Color(0xFFF1F5F9).copy(alpha = 0.015f * mistPulse),
                                 Color.Transparent
                             ),
                             center = androidx.compose.ui.geometry.Offset(x, height * basePercentY),
