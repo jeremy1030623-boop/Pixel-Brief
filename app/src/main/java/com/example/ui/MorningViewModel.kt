@@ -31,6 +31,22 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val calendarRepository = CalendarRepository(application.contentResolver)
     private val locationHelper = LocationHelper(application)
     
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
+    fun reportError(message: String) {
+        _errorMessage.value = message
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+    
     private val _userSettings = MutableStateFlow<UserSettings?>(null)
     val userSettings: StateFlow<UserSettings?> = _userSettings.asStateFlow()
 
@@ -148,8 +164,6 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private val _todaysEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val todaysEvents = _todaysEvents.asStateFlow()
 
-    private val json = Json { ignoreUnknownKeys = true }
-
     private val _newsDetail = MutableStateFlow<List<NewsItem>>(
         listOf(
             NewsItem(
@@ -162,30 +176,16 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             ),
             NewsItem(
                 title = "清晨漫步：最新戶外天氣狀況",
-                summary = "今天天氣溫和，非常適合在出門前進行 10 分鐘的深呼吸與輕度伸展。早晨光線有助於重新調整您的生理時鐘。"
+                summary = "今天天氣溫和，非常適合在出門前進行 10 分鐘的深呼吸與輕度伸展。早晨光線有助於重新調整您的生理時鐘體力。"
             )
         )
     )
     val newsDetail = _newsDetail.asStateFlow()
 
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing = _isRefreshing.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage = _errorMessage.asStateFlow()
-
-    fun clearError() {
-        _errorMessage.value = null
-    }
-
-    private fun reportError(message: String) {
-        _errorMessage.value = message
-    }
-
     data class TimeState(
         val time: String,
         val greeting: String,
-        val secondaryMessage: String = "為您開啟頂奢質感的清晨簡報沙龍",
+        val secondaryMessage: String = "為您開啟今日晨間簡報",
         val isInteraction: Boolean = false
     )
 
@@ -202,19 +202,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                 val calendar = Calendar.getInstance()
                 val hour = calendar.get(Calendar.HOUR_OF_DAY)
                 val greeting = when (hour) {
-                    in 5..6 -> "🌅 拂曉清晨好"
-                    in 7..8 -> "☀️ 早安晨光"
-                    in 9..11 -> "🚀 上午專注時刻"
-                    in 12..13 -> "🍱 午安舒活"
-                    in 14..17 -> "☕ 愜意午後"
-                    in 18..20 -> "🌌 溫馨傍晚"
-                    in 21..23 -> "💤 晚安好夢"
-                    else -> "🦉 深夜靜謐"
+                    in 5..11 -> "早上好 🌅"
+                    in 12..17 -> "下午好 ☀️"
+                    in 18..21 -> "傍晚好 🌇"
+                    else -> "夜深了，注意休息，祝您好夢 🦉"
                 }
-                
                 emit(sdf.format(now) to greeting)
-            } catch (e: Throwable) {
-                android.util.Log.e("MorningViewModel", "Exception in _currentTimeFlow execution", e)
+            } catch (e: Exception) {
+                // Ignore
             }
             delay(60000)
         }

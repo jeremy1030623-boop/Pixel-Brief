@@ -253,32 +253,32 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         else -> "Hello"
                     }
                     val eventText = if (events.isNotEmpty()) {
-                        "You have ${events.size} calendar events today. The first event is ${events.first().title}."
+                        "You have ${events.size} events today."
                     } else {
-                        "You have no calendar events scheduled for today."
+                        "No events scheduled today."
                     }
                     val weatherText = if (weather.condition.isNotEmpty()) {
-                        "The weather is currently ${weather.condition}, with a temperature of around ${weather.currentTemp} degrees $weatherUnitSymbol."
+                        "It's ${weather.condition}, ${weather.currentTemp} degrees."
                     } else {
                         ""
                     }
-                    "$englishGreeting, $username! The current local time is ${timeState.time}. Today's brief highlight is: ${timeState.secondaryMessage}. $weatherText $eventText"
+                    "$englishGreeting, $username! $weatherText $eventText"
                 } else if (lang == "zh_HK") {
                     val eventText = if (events.isNotEmpty()) {
-                        "，您今日有 ${events.size} 項日程，第一項活動係 ${events.first().title}"
+                        "，今日有 ${events.size} 項活動"
                     } else {
-                        "，今日您無任何日程安排"
+                        "，今日無日程"
                     }
                     val weatherText = if (weather.condition.isNotEmpty()) {
-                        "，今日天氣狀況係 ${weather.condition}，氣溫大約係 ${weatherUnitSymbol} ${weather.currentTemp}度"
+                        "，今日天氣${weather.condition}，氣溫約 ${weather.currentTemp}度"
                     } else {
                         ""
                     }
                     val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！而家時間 ${timeState.time}。今日晨間導讀亮點：${timeState.secondaryMessage}${weatherText}${eventText}。"
+                    "${greetingClean}，${username}！現在時間 ${timeState.time}${weatherText}${eventText}。"
                 } else if (lang == "ja") {
                     val eventText = if (events.isNotEmpty()) {
-                        "、本日の予定は ${events.size} 件あります。最初の予定は ${events.first().title} です"
+                        "、本日は ${events.size} 件の予定があります"
                     } else {
                         "、本日の予定はありません"
                     }
@@ -293,20 +293,20 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                         timeState.greeting.contains("晚") -> "こんばんは"
                         else -> "こんにちは"
                     }
-                    "${greetingClean}、${username}さん！現在の時刻は ${timeState.time} です。今日のブリーフィングハイライト：${timeState.secondaryMessage}${weatherText}${eventText}。"
+                    "${greetingClean}、${username}さん！${weatherText}${eventText}。"
                 } else {
                     val eventText = if (events.isNotEmpty()) {
-                        "，您今天有 ${events.size} 筆行事曆日程，第一項活動是 ${events.first().title}"
+                        "，今天有 ${events.size} 項行程"
                     } else {
-                        "，今天您沒有安排行事曆活動"
+                        "，今天沒有行程"
                     }
                     val weatherText = if (weather.condition.isNotEmpty()) {
-                        "，今天天氣狀況是 ${weather.condition}，氣溫大約是 ${weatherUnitSymbol} ${weather.currentTemp}度"
+                        "，今天天氣${weather.condition}，氣溫約 ${weather.currentTemp}度"
                     } else {
                         ""
                     }
                     val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！現在時間 ${timeState.time}。今日晨間亮點簡報：${timeState.secondaryMessage}${weatherText}${eventText}。"
+                    "${greetingClean}，${username}！現在時間 ${timeState.time}${weatherText}${eventText}。"
                 }
 
                 ttsManager.speak(speechText)
