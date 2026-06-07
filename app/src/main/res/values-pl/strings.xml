@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Briefing Pikselowy</string>
+    <string name="settings_title">Ustawienia</string>
+    <string name="home_title">Główna</string>
+    <string name="weather_title">Pogoda</string>
+    <string name="news_title">Wiadomości</string>
+    <string name="agenda_title">Terminarz</string>
+    <string name="syncing">Synchronizacja...</string>
+    <string name="refresh">Odśwież</string>
+    <string name="theme_label">Motyw</string>
+    <string name="save_success">Ustawienia zapisane pomyślnie!</string>
+</resources>

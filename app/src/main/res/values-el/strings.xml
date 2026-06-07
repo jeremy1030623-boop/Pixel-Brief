@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Σεπτο Πίξελ</string>
+    <string name="settings_title">Ρυθμίσεις</string>
+    <string name="home_title">Αρχική</string>
+    <string name="weather_title">Καιρός</string>
+    <string name="news_title">Νέα</string>
+    <string name="agenda_title">Ατζέντα</string>
+    <string name="syncing">Συγχρονισμός...</string>
+    <string name="refresh">Ανανέωση</string>
+    <string name="theme_label">Θέμα</string>
+    <string name="save_success">Οι ρυθμίσεις αποθηκεύτηκαν!</string>
+</resources>

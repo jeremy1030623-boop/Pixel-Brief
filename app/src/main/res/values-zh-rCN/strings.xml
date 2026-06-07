@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">像素简报</string>
+    <string name="settings_title">设置</string>
+    <string name="home_title">首页</string>
+    <string name="weather_title">天气</string>
+    <string name="news_title">新闻</string>
+    <string name="agenda_title">日程</string>
+    <string name="syncing">同步中...</string>
+    <string name="refresh">刷新</string>
+    <string name="theme_label">主题</string>
+    <string name="theme_slate_aurora">极致夜萤</string>
+    <string name="theme_imperial_gold">帝国流金</string>
+    <string name="theme_arctic_mint">冰川极光</string>
+    <string name="theme_twilight_purple">赛博紫幽</string>
+    <string name="news_preference">新闻内容偏好类型</string>
+    <string name="gemini_model_selection">指定端侧/云端核心模型</string>
+    <string name="news_count">显示新闻重点条数</string>
+    <string name="time_format_24">二十四小时制格式</string>
+    <string name="tts_language_section">语音简報導讀语言 (TTS)</string>
+    <string name="tts_description">为您专属定制的晨间小助手语音朗读，提供多国常用语言与地方特色语音导读体验。</string>
+    <string name="save_success">设置已成功保存！</string>
+</resources>

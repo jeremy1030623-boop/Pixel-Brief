@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Pixel Brief</string>
+    <string name="settings_title">Configuració</string>
+    <string name="home_title">Inici</string>
+    <string name="weather_title">Temps</string>
+    <string name="news_title">Notícies</string>
+    <string name="agenda_title">Agenda</string>
+    <string name="syncing">Sincronitzant...</string>
+    <string name="refresh">Actualitzar</string>
+    <string name="theme_label">Tema</string>
+    <string name="save_success">Configuració guardada correctament!</string>
+</resources>

@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Пиксельный Бриф</string>
+    <string name="settings_title">Настройки</string>
+    <string name="home_title">Главная</string>
+    <string name="weather_title">Погода</string>
+    <string name="news_title">Новости</string>
+    <string name="agenda_title">Календарь</string>
+    <string name="syncing">Синхронизация...</string>
+    <string name="refresh">Обновить</string>
+    <string name="theme_label">Тема</string>
+    <string name="save_success">Настройки успешно сохранены!</string>
+</resources>

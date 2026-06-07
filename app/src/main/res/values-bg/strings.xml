@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Пикселен брифинг</string>
+    <string name="settings_title">Настройки</string>
+    <string name="home_title">Начало</string>
+    <string name="weather_title">Време</string>
+    <string name="news_title">Новини</string>
+    <string name="agenda_title">Програма</string>
+    <string name="syncing">Синхронизиране...</string>
+    <string name="refresh">Опресняване</string>
+    <string name="theme_label">Тема</string>
+    <string name="save_success">Настройките са запазени!</string>
+</resources>

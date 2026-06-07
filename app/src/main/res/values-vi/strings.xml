@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Tóm tắt Pixel</string>
+    <string name="settings_title">Cài đặt</string>
+    <string name="home_title">Trang chủ</string>
+    <string name="weather_title">Thời tiết</string>
+    <string name="news_title">Tin tức</string>
+    <string name="agenda_title">Lịch trình</string>
+    <string name="syncing">Đang đồng bộ...</string>
+    <string name="refresh">Làm mới</string>
+    <string name="theme_label">Chủ đề</string>
+    <string name="save_success">Cập nhật cài đặt thành công!</string>
+</resources>

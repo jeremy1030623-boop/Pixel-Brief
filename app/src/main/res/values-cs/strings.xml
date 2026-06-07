@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Pixelový briefing</string>
+    <string name="settings_title">Nastavení</string>
+    <string name="home_title">Domů</string>
+    <string name="weather_title">Počasí</string>
+    <string name="news_title">Zprávy</string>
+    <string name="agenda_title">Agenda</string>
+    <string name="syncing">Synchronizace...</string>
+    <string name="refresh">Obnovit</string>
+    <string name="theme_label">Motiv</string>
+    <string name="save_success">Nastavení úspěšně uloženo!</string>
+</resources>

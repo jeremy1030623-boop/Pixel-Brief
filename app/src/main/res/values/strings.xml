@@ -1,3 +1,23 @@
 <resources>
     <string name="app_name">pixel brief</string>
+    <string name="settings_title">設定</string>
+    <string name="home_title">首頁</string>
+    <string name="weather_title">天氣</string>
+    <string name="news_title">新聞</string>
+    <string name="agenda_title">行程</string>
+    <string name="health_title">健康</string>
+    <string name="syncing">同步中...</string>
+    <string name="refresh">重新整理</string>
+    <string name="theme_label">主題</string>
+    <string name="theme_slate_aurora">極致夜螢</string>
+    <string name="theme_imperial_gold">帝國流金</string>
+    <string name="theme_arctic_mint">冰川極光</string>
+    <string name="theme_twilight_purple">賽博紫幽</string>
+    <string name="news_preference">新聞內容偏好類型</string>
+    <string name="gemini_model_selection">指定端側/雲端核心模型</string>
+    <string name="news_count">顯示新聞重點條數</string>
+    <string name="time_format_24">二十四小時制格式</string>
+    <string name="tts_language_section">語音簡報導讀語言 (TTS)</string>
+    <string name="tts_description">為您專屬訂製的晨間小助手語音朗讀，提供多國常用語言與地方特色語音導讀體驗。</string>
+    <string name="save_success">設定已成功儲存！</string>
 </resources>

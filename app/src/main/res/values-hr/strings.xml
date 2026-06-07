@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Pixel sažetak</string>
+    <string name="settings_title">Postavke</string>
+    <string name="home_title">Početna</string>
+    <string name="weather_title">Vrijeme</string>
+    <string name="news_title">Vijesti</string>
+    <string name="agenda_title">Agenda</string>
+    <string name="syncing">Sinkronizacija...</string>
+    <string name="refresh">Osvježi</string>
+    <string name="theme_label">Tema</string>
+    <string name="save_success">Postavke su uspješno spremljene!</string>
+</resources>

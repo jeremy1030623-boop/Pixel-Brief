@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">موجز بكسل</string>
+    <string name="settings_title">الإعدادات</string>
+    <string name="home_title">الرئيسية</string>
+    <string name="weather_title">الطقس</string>
+    <string name="news_title">الأخبار</string>
+    <string name="agenda_title">الجدول</string>
+    <string name="syncing">جاري المزامنة...</string>
+    <string name="refresh">تحديث</string>
+    <string name="theme_label">السمة</string>
+    <string name="save_success">تم حفظ الإعدادات بنجاح!</string>
+</resources>

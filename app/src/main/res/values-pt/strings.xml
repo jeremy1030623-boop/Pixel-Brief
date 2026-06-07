@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Resumo do Pixel</string>
+    <string name="settings_title">Configurações</string>
+    <string name="home_title">Início</string>
+    <string name="weather_title">Clima</string>
+    <string name="news_title">Notícias</string>
+    <string name="agenda_title">Agenda</string>
+    <string name="syncing">Sincronizando...</string>
+    <string name="refresh">Atualizar</string>
+    <string name="theme_label">Tema</string>
+    <string name="save_success">Configurações salvas com sucesso!</string>
+</resources>

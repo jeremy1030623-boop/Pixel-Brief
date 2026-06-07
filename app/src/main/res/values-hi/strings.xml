@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">पिक्सेल ब्रीफ</string>
+    <string name="settings_title">सेटिंग्स</string>
+    <string name="home_title">होम</string>
+    <string name="weather_title">मौसम</string>
+    <string name="news_title">समाचार</string>
+    <string name="agenda_title">कार्यसूची</string>
+    <string name="syncing">सिंक हो रहा है...</string>
+    <string name="refresh">रिफ्रेश करें</string>
+    <string name="theme_label">थीम</string>
+    <string name="save_success">सेटिंग्स सफलतापूर्वक सहेजी गईं!</string>
+</resources>

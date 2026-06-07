@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Pixel Brief</string>
+    <string name="settings_title">Paramètres</string>
+    <string name="home_title">Accueil</string>
+    <string name="weather_title">Météo</string>
+    <string name="news_title">Actualités</string>
+    <string name="agenda_title">Agenda</string>
+    <string name="syncing">Synchronisation...</string>
+    <string name="refresh">Actualiser</string>
+    <string name="theme_label">Thème</string>
+    <string name="save_success">Paramètres enregistrés avec succès !</string>
+</resources>
