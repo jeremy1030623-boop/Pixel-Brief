@@ -12,8 +12,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -65,8 +63,6 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 
-import androidx.compose.ui.res.stringResource
-import com.example.R
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
@@ -244,75 +240,15 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                 val lang = userSettings?.ttsLanguage ?: "zh_TW"
                 ttsManager.setLanguage(lang)
 
-                val weatherUnitSymbol = if (userSettings?.weatherUnit == "F") {
-                    if (lang == "en") "Fahrenheit" else "華氏"
-                } else {
-                    if (lang == "en") "Celsius" else "攝氏"
-                }
-
-                val speechText = if (lang == "en") {
-                    val englishGreeting = when {
-                        timeState.greeting.contains("早") -> "Good morning"
-                        timeState.greeting.contains("午") -> "Good afternoon"
-                        timeState.greeting.contains("晚") -> "Good evening"
-                        else -> "Hello"
-                    }
-                    val eventText = if (events.isNotEmpty()) {
-                        "You have ${events.size} events today."
-                    } else {
-                        "No events scheduled today."
-                    }
-                    val weatherText = if (weather.condition.isNotEmpty()) {
-                        "It's ${weather.condition}, ${weather.currentTemp} degrees."
-                    } else {
-                        ""
-                    }
-                    "$englishGreeting, $username! $weatherText $eventText"
-                } else if (lang == "zh_HK") {
-                    val eventText = if (events.isNotEmpty()) {
-                        "，今日有 ${events.size} 項活動"
-                    } else {
-                        "，今日無日程"
-                    }
-                    val weatherText = if (weather.condition.isNotEmpty()) {
-                        "，今日天氣${weather.condition}，氣溫約 ${weather.currentTemp}度"
-                    } else {
-                        ""
-                    }
-                    val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！現在時間 ${timeState.time}${weatherText}${eventText}。"
-                } else if (lang == "ja") {
-                    val eventText = if (events.isNotEmpty()) {
-                        "、本日は ${events.size} 件の予定があります"
-                    } else {
-                        "、本日の予定はありません"
-                    }
-                    val weatherText = if (weather.condition.isNotEmpty()) {
-                        "、今日の天気は ${weather.condition}、気温は約 ${weather.currentTemp} 度です"
-                    } else {
-                        ""
-                    }
-                    val greetingClean = when {
-                        timeState.greeting.contains("早") -> "おはようございます"
-                        timeState.greeting.contains("午") -> "こんにちは"
-                        timeState.greeting.contains("晚") -> "こんばんは"
-                        else -> "こんにちは"
-                    }
-                    "${greetingClean}、${username}さん！${weatherText}${eventText}。"
-                } else {
-                    val eventText = if (events.isNotEmpty()) {
-                        "，今天有 ${events.size} 項行程"
-                    } else {
-                        "，今天沒有行程"
-                    }
-                    val weatherText = if (weather.condition.isNotEmpty()) {
-                        "，今天天氣${weather.condition}，氣溫約 ${weather.currentTemp}度"
-                    } else {
-                        ""
-                    }
-                    val greetingClean = timeState.greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
-                    "${greetingClean}，${username}！現在時間 ${timeState.time}${weatherText}${eventText}。"
-                }
+                val speechText = LanguageTranslator.generateSpeechBrief(
+                    lang = lang,
+                    username = username,
+                    greeting = timeState.greeting,
+                    time = timeState.time,
+                    condition = weather.condition,
+                    currentTemp = weather.currentTemp.toString(),
+                    eventCount = events.size
+                )
 
                 ttsManager.speak(speechText)
             }
@@ -862,54 +798,11 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 style = MaterialTheme.typography.titleMedium,
                 color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Highlighted Temperature Stats
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                WeatherStatBadge(
-                    label = "最高溫",
-                    value = formatTemperature(weather.maxTemp, weatherUnit),
-                    icon = Icons.Default.ArrowUpward,
-                    color = Color(0xFFFF8A65),
-                    isNight = isNight,
-                    modifier = Modifier.weight(1f)
-                )
-                WeatherStatBadge(
-                    label = "最低溫",
-                    value = formatTemperature(weather.minTemp, weatherUnit),
-                    icon = Icons.Default.ArrowDownward,
-                    color = Color(0xFF81D4FA),
-                    isNight = isNight,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                WeatherStatBadge(
-                    label = "體感溫度",
-                    value = formatTemperature(weather.apparentTemp, weatherUnit),
-                    icon = Icons.Default.Thermostat,
-                    color = Color(0xFFCE93D8),
-                    isNight = isNight,
-                    modifier = Modifier.weight(1f)
-                )
-                WeatherStatBadge(
-                    label = "目前濕度",
-                    value = "${weather.humidity}%",
-                    icon = Icons.Default.WaterDrop,
-                    color = Color(0xFF80DEEA),
-                    isNight = isNight,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Text(
+                "今日氣溫：${weather.minTemp}°C ~ ${weather.maxTemp}°C  (體感 ${weather.apparentTemp}°C)",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
+            )
             
             Spacer(modifier = Modifier.height(28.dp))
 
@@ -2460,21 +2353,7 @@ fun WeatherCard(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color(0xFFFF8A65), modifier = Modifier.size(10.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(formatTemperature(weather.maxTemp, weatherUnit), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.9f))
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color(0xFF81D4FA), modifier = Modifier.size(10.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(formatTemperature(weather.minTemp, weatherUnit), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.9f))
-                        }
-                    }
+                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
                 }
             }
             
@@ -2837,7 +2716,6 @@ fun formatTemperature(tempC: Int, unit: String): String {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     settings: UserSettings,
@@ -2892,13 +2770,13 @@ fun SettingsScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = LanguageTranslator.get("back_button", editTtsLanguage),
                             tint = Color.White
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        stringResource(id = R.string.settings_title),
+                        LanguageTranslator.get("settings_title", editTtsLanguage),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -2927,7 +2805,7 @@ fun SettingsScreen(
                             ttsLanguage = editTtsLanguage
                         )
                         onSave(updated)
-                        android.widget.Toast.makeText(context, context.getString(R.string.save_success), android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, LanguageTranslator.get("toast_saved", editTtsLanguage), android.widget.Toast.LENGTH_SHORT).show()
                         onBack()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -2936,7 +2814,7 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.height(40.dp).testTag("save_settings_button")
                 ) {
-                    Text("儲存", fontWeight = FontWeight.Bold, color = AuroraMidnight)
+                    Text(LanguageTranslator.get("save_button", editTtsLanguage), fontWeight = FontWeight.Bold, color = AuroraMidnight)
                 }
             }
 
@@ -2950,7 +2828,7 @@ fun SettingsScreen(
             ) {
                 // Section 1: 登入與帳號設定 (Login & Account)
                 item {
-                    SettingsSectionCard(title = "一、帳號與登入") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_1", editTtsLanguage)) {
                         if (editUsername.contains("Google") || editUsername.contains("gmail")) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AuroraMint)
@@ -3015,7 +2893,7 @@ fun SettingsScreen(
                 }
 
                 item {
-                    SettingsSectionCard(title = "二、天氣與位置") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_2", editTtsLanguage)) {
                         SettingsRow(
                             label = "精準位置存取",
                             description = "獲取當地精準定位氣溫與即時降雨資訊",
@@ -3082,7 +2960,7 @@ fun SettingsScreen(
 
                 // Section 3: 睡眠與健康 (Sleep & Health)
                 item {
-                    SettingsSectionCard(title = "三、睡眠與健康") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_3", editTtsLanguage)) {
                         SettingsRow(
                             label = "健康數據同步",
                             description = "連結 Google Fit/健康連接 API 讀取今日昨夜睡眠時數",
@@ -3111,7 +2989,7 @@ fun SettingsScreen(
 
                 // Section 4: 活動與日曆 (Activities & Calendar)
                 item {
-                    SettingsSectionCard(title = "四、活動與日曆") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_4", editTtsLanguage)) {
                         Text(
                             "展示聯動之 Google 帳端",
                             style = MaterialTheme.typography.titleSmall,
@@ -3155,8 +3033,8 @@ fun SettingsScreen(
 
                 // Section 5: 每日新聞 (News Feed)
                 item {
-                    SettingsSectionCard(title = "五、每日新聞與端側/雲端 Gemini 設定") {
-                        Text(stringResource(R.string.news_preference), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    SettingsSectionCard(title = LanguageTranslator.get("section_5", editTtsLanguage)) {
+                        Text("新聞內容偏好類型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("local" to "在地最新新聞", "international" to "國際焦點新聞").forEach { (code, label) ->
@@ -3179,7 +3057,7 @@ fun SettingsScreen(
                         }
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
 
-                        Text(stringResource(R.string.gemini_model_selection), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Text("指定端側/雲端核心模型", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
@@ -3211,7 +3089,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(stringResource(R.string.news_count), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                            Text("顯示新聞重點條數", style = MaterialTheme.typography.titleSmall, color = Color.White)
                             Text("${editDisplayedNewsCount.toInt()} 條", style = MaterialTheme.typography.bodyMedium, color = AuroraOceanic, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -3229,9 +3107,9 @@ fun SettingsScreen(
 
                 // Section 6: 系統與專屬優化 (System & Permissions)
                 item {
-                    SettingsSectionCard(title = "六、系統與專屬權限整合") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_6", editTtsLanguage)) {
                         SettingsRow(
-                            label = stringResource(R.string.time_format_24),
+                            label = "二十四小時制格式",
                             description = "首頁現在時間採用 24H 制，關閉則顯示 12H 制 (如 上午 10:00)",
                             checked = editTimeFormat24State,
                             onCheckedChange = { editTimeFormat24State = it },
@@ -3240,54 +3118,155 @@ fun SettingsScreen(
 
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
 
-                        Text(stringResource(R.string.tts_language_section), style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Text("語音簡報導讀語言 (TTS)", style = MaterialTheme.typography.titleSmall, color = Color.White)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            stringResource(R.string.tts_description),
+                            "為您專屬訂製的晨間小助手語音朗讀，提供多國常用語言與地方特色語音導讀體驗。",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        var showLanguageDialog by remember { mutableStateOf(false) }
+                        val selectedLanguagePair = LanguageTranslator.supportedLanguages.find { it.first == editTtsLanguage }
+                        val selectedLanguageLabel = selectedLanguagePair?.second?.first ?: "繁體中文 (台灣)"
+
+                        Button(
+                            onClick = { showLanguageDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1E293B),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("tts_language_picker_trigger")
                         ) {
-                            listOf(
-                                "zh_TW" to "繁中", "zh_HK" to "粵語", "zh_CN" to "簡中", "en" to "EN",
-                                "ja" to "日本語", "ko" to "한국어", "fr" to "FR", "de" to "DE",
-                                "es" to "ES", "it" to "IT", "pt" to "PT", "ru" to "RU",
-                                "ar" to "AR", "hi" to "HI", "th" to "TH", "vi" to "VI",
-                                "id" to "ID", "ms" to "MS", "tr" to "TR", "pl" to "PL",
-                                "nl" to "NL", "sv" to "SV", "da" to "DA", "fi" to "FI",
-                                "no" to "NO", "cs" to "CS", "hu" to "HU", "ro" to "RO",
-                                "el" to "EL", "he" to "HE", "uk" to "UK", "sk" to "SK",
-                                "bg" to "BG", "hr" to "HR", "ca" to "CA"
-                            ).forEach { (code, label) ->
-                                val selected = editTtsLanguage == code
-                                Button(
-                                    onClick = { editTtsLanguage = code },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (selected) Color(0xFF10B981) else Color(0xFF1E293B),
-                                        contentColor = if (selected) Color.White else Color(0xFF94A3B8)
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .height(32.dp)
-                                        .testTag("tts_language_${code}_button")
-                                ) {
-                                    Text(label, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, maxLines = 1)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Language, contentDescription = null, tint = AuroraMint)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = selectedLanguageLabel,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
                                 }
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "展開語言清單", tint = Color.White)
                             }
+                        }
+
+                        if (showLanguageDialog) {
+                            var searchQuery by remember { mutableStateOf("") }
+                            val filteredLanguages = LanguageTranslator.supportedLanguages.filter {
+                                it.second.first.contains(searchQuery, ignoreCase = true) ||
+                                it.first.contains(searchQuery, ignoreCase = true)
+                            }
+
+                            AlertDialog(
+                                onDismissRequest = { showLanguageDialog = false },
+                                title = {
+                                    Column {
+                                        Text(
+                                            "選擇導讀與系統語言 (共 ${LanguageTranslator.supportedLanguages.size} 種)",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        OutlinedTextField(
+                                            value = searchQuery,
+                                            onValueChange = { searchQuery = it },
+                                            placeholder = { Text("搜尋語言...", color = Color.Gray) },
+                                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("language_search_input"),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                unfocusedBorderColor = Color(0xFF334155),
+                                                focusedBorderColor = AuroraMint,
+                                                unfocusedLabelColor = Color.White,
+                                                focusedLabelColor = Color.White,
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White
+                                            ),
+                                            singleLine = true
+                                        )
+                                    }
+                                },
+                                text = {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(300.dp)
+                                    ) {
+                                        LazyColumn(
+                                            modifier = Modifier.fillMaxSize(),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            items(filteredLanguages.size) { index ->
+                                                val (code, namePair) = filteredLanguages[index]
+                                                val isSelected = editTtsLanguage == code
+
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(if (isSelected) AuroraMidnight else Color.Transparent)
+                                                        .clickable {
+                                                            editTtsLanguage = code
+                                                            showLanguageDialog = false
+                                                        }
+                                                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                                                        .testTag("tts_language_${code}_button"),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    RadioButton(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            editTtsLanguage = code
+                                                            showLanguageDialog = false
+                                                        },
+                                                        colors = RadioButtonDefaults.colors(
+                                                            selectedColor = AuroraMint,
+                                                            unselectedColor = Color(0xFF64748B)
+                                                        )
+                                                    )
+                                                    Spacer(modifier = Modifier.width(10.dp))
+                                                    Text(
+                                                        text = namePair.first,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isSelected) AuroraMint else Color.White
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showLanguageDialog = false }) {
+                                        Text("關閉", color = AuroraMint, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                containerColor = AuroraDeepIndigo,
+                                shape = RoundedCornerShape(16.dp)
+                            )
                         }
                     }
                 }
 
                 // Section 7: 隱私與生物辨識防護 (Privacy & Biometrics)
                 item {
-                    SettingsSectionCard(title = "七、隱私與生物辨識防護") {
+                    SettingsSectionCard(title = LanguageTranslator.get("section_7", editTtsLanguage)) {
                         val biometricAvailable = remember { SecurityHelper.isBiometricAvailable(context) }
                         
                         SettingsRow(
@@ -3709,61 +3688,6 @@ fun WeatherAtmosphereOverlay(
 }
 
 // Recharts-inspired gorgeous Temperature Trend Line Chart in Native Compose
-@Composable
-fun WeatherStatBadge(
-    label: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
-    isNight: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = if (isNight) color.copy(alpha = 0.15f) else color.copy(alpha = 0.08f)
-        ),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(
-            1.dp,
-            if (isNight) color.copy(alpha = 0.3f) else color.copy(alpha = 0.15f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(color.copy(alpha = 0.2f), RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Column {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isNight) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.5f)
-                )
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isNight) Color.White else Color.Black
-                )
-            }
-        }
-    }
-}
-
 @Composable
 fun TemperatureTrendLineChart(
     data: List<Pair<String, Int>>,

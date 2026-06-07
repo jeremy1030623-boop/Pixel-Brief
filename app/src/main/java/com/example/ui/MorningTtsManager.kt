@@ -53,7 +53,47 @@ class MorningTtsManager(
                 "en" -> Locale.US
                 "ja" -> Locale.JAPANESE
                 "zh_HK" -> Locale("zh", "HK")
-                else -> Locale.TRADITIONAL_CHINESE
+                "ko" -> Locale.KOREAN
+                "fr" -> Locale.FRANCE
+                "de" -> Locale.GERMANY
+                "es" -> Locale("es", "ES")
+                "it" -> Locale.ITALY
+                "ru" -> Locale("ru", "RU")
+                "pt" -> Locale("pt", "PT")
+                "ar" -> Locale("ar")
+                "th" -> Locale("th", "TH")
+                "vi" -> Locale("vi", "VN")
+                "tr" -> Locale("tr", "TR")
+                "hi" -> Locale("hi", "IN")
+                "id" -> Locale("id", "ID")
+                "ms" -> Locale("ms", "MY")
+                "nl" -> Locale("nl", "NL")
+                "sv" -> Locale("sv", "SE")
+                "da" -> Locale("da", "DK")
+                "fi" -> Locale("fi", "FI")
+                "nb" -> Locale("nb", "NO")
+                "pl" -> Locale("pl", "PL")
+                "uk" -> Locale("uk", "UA")
+                "cs" -> Locale("cs", "CZ")
+                "el" -> Locale("el", "GR")
+                "bg" -> Locale("bg", "BG")
+                "ca" -> Locale("ca", "ES")
+                "hr" -> Locale("hr", "HR")
+                "hu" -> Locale("hu", "HU")
+                "ro" -> Locale("ro", "RO")
+                "sk" -> Locale("sk", "SK")
+                else -> {
+                    try {
+                        val parts = langCode.split("_")
+                        if (parts.size == 2) {
+                            Locale(parts[0], parts[1])
+                        } else {
+                            Locale(langCode)
+                        }
+                    } catch (e: Exception) {
+                        Locale.TRADITIONAL_CHINESE
+                    }
+                }
             }
             tts?.setLanguage(locale)
         }

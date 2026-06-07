@@ -172,28 +172,6 @@ fun WeatherAnimatedIcon(
         label = "lightning"
     )
 
-    // NEW: Kinetic Tremor / Shivering motion for "active" feel
-    val tremor by infiniteTransition.animateFloat(
-        initialValue = -0.6f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(140, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "tremor"
-    )
-
-    // NEW: Cloud internal shimmer effect
-    val cloudShimmerAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "cloud_shimmer"
-    )
-
     // Sparkling stars for night clear sky
     val starSparkle by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -221,7 +199,7 @@ fun WeatherAnimatedIcon(
             // Thunderstorm
             condition.contains("雷") -> {
                 // Background dark cloud
-                drawCloudShape(Color(0xFF334155), offsetX = cloudDrift, offsetY = -h * 0.1f, shimmerAlpha = cloudShimmerAlpha * 0.4f)
+                drawCloudShape(Color(0xFF334155), offsetX = cloudDrift, offsetY = -h * 0.1f)
                 
                 // Jagged electric lightning bolt
                 if (lightningAlpha > 0.05f) {
@@ -248,25 +226,25 @@ fun WeatherAnimatedIcon(
             // Rainy
             condition.contains("雨") -> {
                 // Secondary background cloud
-                drawCloudShape(Color(0xFF64748B).copy(alpha = 0.5f), offsetX = cloudDrift * 0.5f - w * 0.1f, offsetY = -h * 0.15f, baseScale = 0.85f, shimmerAlpha = 0f)
+                drawCloudShape(Color(0xFF64748B).copy(alpha = 0.5f), offsetX = cloudDrift * 0.5f - w * 0.1f, offsetY = -h * 0.15f, baseScale = 0.85f)
                 // Primary front cloud
-                drawCloudShape(Color(0xFF475569), offsetX = cloudDrift, offsetY = -h * 0.08f, shimmerAlpha = cloudShimmerAlpha * 0.6f)
+                drawCloudShape(Color(0xFF475569), offsetX = cloudDrift, offsetY = -h * 0.08f)
 
                 // Multi-layer rain droplets falling down
-                drawRaindrop(cx - w * 0.25f, cy + h * 0.05f, rain1, Color(0xFF60A5FA), tremor)
-                drawRaindrop(cx, cy + h * 0.08f, rain2, Color(0xFF93C5FD), -tremor)
-                drawRaindrop(cx + w * 0.25f, cy + h * 0.04f, rain3, Color(0xFF3B82F6), tremor * 0.5f)
+                drawRaindrop(cx - w * 0.25f, cy + h * 0.05f, rain1, Color(0xFF60A5FA))
+                drawRaindrop(cx, cy + h * 0.08f, rain2, Color(0xFF93C5FD))
+                drawRaindrop(cx + w * 0.25f, cy + h * 0.04f, rain3, Color(0xFF3B82F6))
             }
 
             // Snowy
             condition.contains("雪") -> {
                 // Whitecloud base
-                drawCloudShape(Color(0xFF94A3B8), offsetX = cloudDrift, offsetY = -h * 0.08f, shimmerAlpha = cloudShimmerAlpha)
+                drawCloudShape(Color(0xFF94A3B8), offsetX = cloudDrift, offsetY = -h * 0.08f)
 
                 // Beautiful floating ice crystals
-                drawSnowflake(cx - w * 0.22f, cy + h * 0.05f, snow1, tremor)
-                drawSnowflake(cx + w * 0.02f, cy + h * 0.08f, snow2, -tremor)
-                drawSnowflake(cx + w * 0.24f, cy + h * 0.04f, snow3, tremor * 1.2f)
+                drawSnowflake(cx - w * 0.22f, cy + h * 0.05f, snow1)
+                drawSnowflake(cx + w * 0.02f, cy + h * 0.08f, snow2)
+                drawSnowflake(cx + w * 0.24f, cy + h * 0.04f, snow3)
             }
 
             // Foggy, Overcast, Mist
@@ -286,12 +264,12 @@ fun WeatherAnimatedIcon(
                     // Moon back glow
                     drawCrescentMoon(cx - w * 0.12f, cy - h * 0.15f, w * 0.26f, Color(0xFFFDE68A))
                     // Front drifting fluffy cloud
-                    drawCloudShape(Color(0xFFE2E8F0).copy(alpha = 0.92f), offsetX = cloudDrift, offsetY = h * 0.02f, shimmerAlpha = cloudShimmerAlpha)
+                    drawCloudShape(Color(0xFFE2E8F0).copy(alpha = 0.92f), offsetX = cloudDrift, offsetY = h * 0.02f)
                 } else {
                     // Golden sun behind cloud
                     drawSunBody(cx - w * 0.12f, cy - h * 0.15f, w * 0.23f * sunPulseScale, Color(0xFFFBBF24))
                     // Soft white/slate cloud
-                    drawCloudShape(Color(0xFFF1F5F9).copy(alpha = 0.95f), offsetX = cloudDrift, offsetY = h * 0.02f, shimmerAlpha = cloudShimmerAlpha)
+                    drawCloudShape(Color(0xFFF1F5F9).copy(alpha = 0.95f), offsetX = cloudDrift, offsetY = h * 0.02f)
                 }
             }
 
@@ -324,8 +302,8 @@ fun WeatherAnimatedIcon(
                             
                             drawLine(
                                 color = Color(0xFFF59E0B),
-                                start = Offset(startOptX + tremor, startOptY + tremor),
-                                end = Offset(endOptX + tremor, endOptY + tremor),
+                                start = Offset(startOptX, startOptY),
+                                end = Offset(endOptX, endOptY),
                                 strokeWidth = w * 0.045f,
                                 cap = StrokeCap.Round
                             )
@@ -358,43 +336,44 @@ private fun DrawScope.drawCloudShape(
     color: Color,
     offsetX: Float,
     offsetY: Float,
-    baseScale: Float = 1f,
-    shimmerAlpha: Float = 0f
+    baseScale: Float = 1f
 ) {
     val cloudWidth = size.width * 0.65f * baseScale
     val cloudHeight = size.height * 0.38f * baseScale
     val centerX = size.width / 2f + offsetX
     val centerY = size.height / 2f + offsetY
 
-    // Draw main cloud body with shadow/depth
-    val drawCloud = { fillColor: Color, s: Float, ox: Float, oy: Float ->
-        val sw = cloudWidth * s
-        val sh = cloudHeight * s
-        val cx = centerX + ox
-        val cy = centerY + oy
+    // Bottom horizontal pill base
+    val pillWidth = cloudWidth
+    val pillHeight = cloudHeight * 0.52f
+    val pillLeft = centerX - pillWidth / 2f
+    val pillTop = centerY + cloudHeight * 0.15f - pillHeight / 2f
 
-        // Bottom pill
-        val pw = sw
-        val ph = sh * 0.52f
-        drawRoundRect(
-            color = fillColor,
-            topLeft = Offset(cx - pw / 2f, cy + sh * 0.15f - ph / 2f),
-            size = Size(pw, ph),
-            cornerRadius = CornerRadius(ph / 2f, ph / 2f)
-        )
-        // Bubbles
-        drawCircle(fillColor, sh * 0.38f, Offset(cx - sw * 0.24f, cy - sh * 0.04f))
-        drawCircle(fillColor, sh * 0.52f, Offset(cx + sw * 0.02f, cy - size.height * 0.08f))
-        drawCircle(fillColor, sh * 0.36f, Offset(cx + sw * 0.26f, cy + sh * 0.02f))
-    }
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(pillLeft, pillTop),
+        size = Size(pillWidth, pillHeight),
+        cornerRadius = CornerRadius(pillHeight / 2f, pillHeight / 2f)
+    )
 
-    // Base color
-    drawCloud(color, 1f, 0f, 0f)
+    // Overlapping bubble circles
+    drawCircle(
+        color = color,
+        radius = cloudHeight * 0.38f,
+        center = Offset(centerX - cloudWidth * 0.24f, centerY - cloudHeight * 0.04f)
+    )
 
-    // Internal Shimmer Highlight
-    if (shimmerAlpha > 0f) {
-        drawCloud(Color.White.copy(alpha = shimmerAlpha * 0.25f), 0.85f, -cloudWidth * 0.05f, -cloudHeight * 0.05f)
-    }
+    drawCircle(
+        color = color,
+        radius = cloudHeight * 0.52f,
+        center = Offset(centerX + cloudWidth * 0.02f, centerY - size.height * 0.08f)
+    )
+
+    drawCircle(
+        color = color,
+        radius = cloudHeight * 0.36f,
+        center = Offset(centerX + cloudWidth * 0.26f, centerY + cloudHeight * 0.02f)
+    )
 }
 
 private fun DrawScope.drawSunBody(
@@ -449,19 +428,18 @@ private fun DrawScope.drawRaindrop(
     dropX: Float,
     baseStartY: Float,
     progress: Float,
-    color: Color,
-    tremor: Float = 0f
+    color: Color
 ) {
     val travelHeight = size.height * 0.35f
     val dropLength = size.height * 0.08f
     val startY = baseStartY + progress * travelHeight
     val endY = startY + dropLength
 
-    // Draw rain angle slightly drifted left with kinetic tremor
+    // Draw rain angle slightly drifted left
     drawLine(
         color = color.copy(alpha = (1f - progress).coerceIn(0f, 1f)),
-        start = Offset(dropX + tremor, startY),
-        end = Offset(dropX - size.width * 0.05f + tremor, endY),
+        start = Offset(dropX, startY),
+        end = Offset(dropX - size.width * 0.05f, endY),
         strokeWidth = 3.dp.toPx(),
         cap = StrokeCap.Round
     )
@@ -470,13 +448,12 @@ private fun DrawScope.drawRaindrop(
 private fun DrawScope.drawSnowflake(
     dropX: Float,
     baseStartY: Float,
-    progress: Float,
-    tremor: Float = 0f
+    progress: Float
 ) {
     val travelHeight = size.height * 0.35f
     val startY = baseStartY + progress * travelHeight
-    // Sway horizontally with elegant sin-wave + kinetic tremor
-    val swayX = dropX + sin(progress * Math.PI.toFloat() * 2f) * size.width * 0.06f + tremor
+    // Sway horizontally with elegant sin-wave
+    val swayX = dropX + sin(progress * Math.PI.toFloat() * 2f) * size.width * 0.06f
 
     drawCircle(
         color = Color.White.copy(alpha = (1f - progress).coerceIn(0f, 1f)),
