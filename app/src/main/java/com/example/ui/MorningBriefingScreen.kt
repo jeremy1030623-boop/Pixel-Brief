@@ -616,7 +616,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 visible = agendaVisible,
                                 enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
                             ) {
-                                AgendaSection(events, weather.condition, isNight, activePremiumTheme) {
+                                AgendaSection(events, weather.condition, isNight, activePremiumTheme, isRefreshing) {
                                     if (calendarPermissionGranted.value) {
                                         isCalendarOpen = true
                                     } else {
@@ -644,6 +644,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 healthVisible = healthVisible,
                                 weatherVisible = weatherVisible,
                                 newsVisible = newsVisible,
+                                isLoading = isRefreshing,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = {
@@ -1526,6 +1527,7 @@ fun DailyGoalsCard(
     onAddTask: (String) -> Unit,
     onToggleTask: (com.example.data.TaskItem) -> Unit,
     onDeleteTask: (com.example.data.TaskItem) -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val totalCount = tasks.size
@@ -1542,9 +1544,10 @@ fun DailyGoalsCard(
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = Color(0xFF0C1B1E),
+        borderColors = listOf(Color(0xFF10B981).copy(alpha = 0.35f), Color(0xFF059669).copy(alpha = 0.08f), Color.Transparent),
+        glowColor = Color(0xFF10B981),
+        isLoading = isLoading
     ) {
         Column(
             modifier = Modifier
@@ -1819,15 +1822,14 @@ val ExpressiveShape = RoundedCornerShape(32.dp)
 
 fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
     if (!isNight) {
-        // High-end, premium sapphire-indigo and misty ocean-slate translucent cards to ensure white text is perfectly legible
         return when {
-            condition.contains("雷") -> Color(0xFF2E2A4F).copy(alpha = 0.82f) // Stormy: Mystic electric indigo
-            condition.contains("雨") -> Color(0xFF1E3A5F).copy(alpha = 0.82f) // Rainy: Deep ocean navy
-            condition.contains("雪") -> Color(0xFF2C4C5E).copy(alpha = 0.82f) // Snowy: Polar blue-grey
-            condition.contains("霧") || condition.contains("陰") -> Color(0xFF374151).copy(alpha = 0.82f) // Overcast/Mist: Clean charcoal slate
-            condition.contains("多雲") -> Color(0xFF3B3B5E).copy(alpha = 0.82f) // Cloudy: Sophisticated slate-indigo
-            condition == "晴朗" -> Color(0xFF0F2C59).copy(alpha = 0.82f) // Clear: Luxurious celestial navy
-            else -> Color(0xFF1E293B).copy(alpha = 0.82f) // Deep slate
+            condition.contains("雷") -> Color(0xFF2E2A4F) // Stormy: Mystic electric indigo
+            condition.contains("雨") -> Color(0xFF1E3A5F) // Rainy: Deep ocean navy
+            condition.contains("雪") -> Color(0xFF2C4C5E) // Snowy: Polar blue-grey
+            condition.contains("霧") || condition.contains("陰") -> Color(0xFF374151) // Overcast/Mist: Clean charcoal slate
+            condition.contains("多雲") -> Color(0xFF3B3B5E) // Cloudy: Sophisticated slate-indigo
+            condition == "晴朗" -> Color(0xFF0F2C59) // Clear: Luxurious celestial navy
+            else -> Color(0xFF1E293B) // Deep slate
         }
     }
 
@@ -1841,42 +1843,107 @@ fun getCardBackgroundColor(condition: String, isNight: Boolean = false): Color {
 }
 
 @Composable
+fun shimmerBrush(showShimmer: Boolean = true, targetValue: Float = 1000f): Brush {
+    return if (showShimmer) {
+        val shimmerColors = listOf(
+            Color.White.copy(alpha = 0.05f),
+            Color.White.copy(alpha = 0.2f),
+            Color.White.copy(alpha = 0.05f),
+        )
+
+        val transition = rememberInfiniteTransition(label = "shimmer")
+        val translateAnimation = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = targetValue,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "shimmer"
+        )
+
+        Brush.linearGradient(
+            colors = shimmerColors,
+            start = Offset.Zero,
+            end = Offset(x = translateAnimation.value, y = translateAnimation.value)
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(Color.Transparent, Color.Transparent),
+            start = Offset.Zero,
+            end = Offset.Zero
+        )
+    }
+}
+
+@Composable
 fun GlassmorphicCard(
     modifier: Modifier = Modifier,
     containerColor: Color,
     borderColors: List<Color>? = null,
     glowColor: Color = Color.Transparent,
+    isLoading: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val finalModifier = if (onClick != null) {
+    val finalModifier = if (onClick != null && !isLoading) {
         modifier.clickable { onClick() }
     } else {
         modifier
     }
+
+    val finalBorderColors = borderColors ?: listOf(
+        Color.White.copy(alpha = 0.16f), 
+        Color.White.copy(alpha = 0.04f),
+        Color.Transparent
+    )
 
     Card(
         modifier = finalModifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = containerColor
         ),
+        border = BorderStroke(
+            width = 1.2.dp,
+            brush = Brush.linearGradient(colors = finalBorderColors)
+        ),
         shape = MaterialTheme.shapes.extraLarge
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            content = content
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (isLoading) 0.1f else 1f),
+                content = content
+            )
+            
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(shimmerBrush())
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun AgendaSection(events: List<com.example.data.CalendarEvent>, condition: String, isNight: Boolean, activeTheme: PremiumLayoutTheme, onAuthorize: () -> Unit) {
+fun AgendaSection(
+    events: List<com.example.data.CalendarEvent>,
+    condition: String,
+    isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
+    isRefreshing: Boolean = false,
+    onAuthorize: () -> Unit
+) {
     GlassmorphicCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onAuthorize,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = Color(0xFF0F1E3A),
+        borderColors = listOf(Color(0xFF60A5FA).copy(alpha = 0.32f), Color(0xFF2563EB).copy(alpha = 0.08f), Color.Transparent),
+        glowColor = Color(0xFF60A5FA),
+        isLoading = isRefreshing
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -1947,6 +2014,7 @@ fun WidgetGrid(
     healthVisible: Boolean,
     weatherVisible: Boolean,
     newsVisible: Boolean,
+    isLoading: Boolean = false,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
@@ -1966,6 +2034,7 @@ fun WidgetGrid(
                     lastSyncTime = lastSyncTime,
                     isNight = isNight,
                     activeTheme = activeTheme,
+                    isLoading = isLoading,
                     onReSync = onSync
                 )
             } else {
@@ -1973,6 +2042,7 @@ fun WidgetGrid(
                     condition = weather.condition,
                     isNight = isNight,
                     activeTheme = activeTheme,
+                    isLoading = isLoading,
                     onSync = onSync
                 )
             }
@@ -1988,6 +2058,7 @@ fun WidgetGrid(
                 weatherUnit = weatherUnit,
                 isNight = isNight,
                 activeTheme = activeTheme,
+                isLoading = isLoading,
                 onWeatherClick = onWeatherClick
             )
         }
@@ -2003,6 +2074,7 @@ fun WidgetGrid(
                 newsMode = newsMode,
                 isNight = isNight,
                 activeTheme = activeTheme,
+                isLoading = isLoading,
                 onNewsModeChange = onNewsModeChange,
                 onItemClick = onNewsClick
             )
@@ -2015,6 +2087,7 @@ fun SyncHealthReminderCard(
     condition: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    isLoading: Boolean = false,
     onSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2024,9 +2097,10 @@ fun SyncHealthReminderCard(
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = Color(0xFF15122E),
+        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.32f), Color(0xFF7C3AED).copy(alpha = 0.08f), Color.Transparent),
+        glowColor = Color(0xFFA78BFA),
+        isLoading = isLoading
     ) {
         Column(
             modifier = Modifier.padding(20.dp).fillMaxWidth()
@@ -2110,6 +2184,7 @@ fun SleepCard(
     lastSyncTime: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    isLoading: Boolean = false,
     onReSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2119,9 +2194,10 @@ fun SleepCard(
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = Color(0xFF15122E),
+        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.32f), Color(0xFF7C3AED).copy(alpha = 0.08f), Color.Transparent),
+        glowColor = Color(0xFFA78BFA),
+        isLoading = isLoading
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(
@@ -2257,15 +2333,37 @@ fun WeatherCard(
     weatherUnit: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    isLoading: Boolean = false,
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val weatherCardBg = remember(condition, isNight) {
+        getCardBackgroundColor(condition, isNight)
+    }
+    val weatherBorderColors = remember(condition) {
+        when {
+            condition.contains("雨") || condition.contains("雷") -> listOf(Color(0xFF60A5FA).copy(alpha = 0.35f), Color(0xFF2563EB).copy(alpha = 0.08f), Color.Transparent)
+            condition.contains("雪") -> listOf(Color(0xFF93C5FD).copy(alpha = 0.35f), Color(0xFFE0F2FE).copy(alpha = 0.08f), Color.Transparent)
+            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> listOf(Color(0xFF94A3B8).copy(alpha = 0.32f), Color(0xFF475569).copy(alpha = 0.08f), Color.Transparent)
+            else -> listOf(Color(0xFFFEF08A).copy(alpha = 0.38f), Color(0xFFF59E0B).copy(alpha = 0.08f), Color.Transparent)
+        }
+    }
+    val weatherGlowColor = remember(condition) {
+        when {
+            condition.contains("雨") || condition.contains("雷") -> Color(0xFF60A5FA)
+            condition.contains("雪") -> Color(0xFF93C5FD)
+            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> Color(0xFF94A3B8)
+            else -> Color(0xFFF59E0B)
+        }
+    }
+
     GlassmorphicCard(
         modifier = modifier,
         onClick = onWeatherClick,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = weatherCardBg,
+        borderColors = weatherBorderColors,
+        glowColor = weatherGlowColor,
+        isLoading = isLoading
     ) {
         Row(
             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -2337,14 +2435,16 @@ fun NewsCard(
     newsMode: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    isLoading: Boolean = false,
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
     GlassmorphicCard(
         modifier = Modifier,
-        containerColor = activeTheme.cardBg,
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor
+        containerColor = Color(0xFF16130F),
+        borderColors = listOf(Color(0xFFF59E0B).copy(alpha = 0.32f), Color(0xFFD97706).copy(alpha = 0.08f), Color.Transparent),
+        glowColor = Color(0xFFF59E0B),
+        isLoading = isLoading
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(
