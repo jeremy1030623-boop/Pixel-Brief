@@ -371,6 +371,10 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         )
@@ -392,6 +396,16 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         viewModel.fetchData()
     }
 
+    val multiplePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        val fineGranted = permissionsMap[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissionsMap[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        locationPermissionGranted.value = fineGranted || coarseGranted
+        calendarPermissionGranted.value = permissionsMap[Manifest.permission.READ_CALENDAR] ?: false
+        viewModel.fetchData()
+    }
+
     val checkAndRequestCalendarPermission = remember(calendarPermissionGranted.value) {
         {
             if (!calendarPermissionGranted.value) {
@@ -403,13 +417,33 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     val checkAndRequestLocationPermission = remember(locationPermissionGranted.value) {
         {
             if (!locationPermissionGranted.value) {
-                locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
         }
     }
     
     LaunchedEffect(Unit) {
         visible = true
+        
+        val requiredPermissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.READ_CALENDAR,
+            Manifest.permission.RECORD_AUDIO
+        )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
+        val ungranted = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        
+        if (ungranted.isNotEmpty()) {
+            multiplePermissionLauncher.launch(ungranted.toTypedArray())
+        } else {
+            viewModel.fetchData()
+        }
     }
 
     LaunchedEffect(visible, isRefreshing) {
@@ -1304,23 +1338,7 @@ fun GreetingSection(
                 )
             }
             
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            // Settings Gear Button
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.White.copy(alpha = 0.05f), androidx.compose.foundation.shape.CircleShape)
-                    .testTag("open_settings_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "專屬設定",
-                    tint = if (isNight) Color.White else Color(0xFF1E293B),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            // Settings Gear Button has been removed to simplify the interface
         }
         
         Spacer(modifier = Modifier.height(16.dp))
