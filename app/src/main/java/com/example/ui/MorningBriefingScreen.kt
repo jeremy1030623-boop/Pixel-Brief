@@ -32,6 +32,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetHostView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -134,6 +140,8 @@ sealed class ScreenState {
     object CalendarViewer : ScreenState()
 }
 
+val APPWIDGET_HOST_ID = 1024
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
@@ -218,6 +226,52 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     var isCalendarOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
+    val appWidgetHost = remember { AppWidgetHost(context, APPWIDGET_HOST_ID) }
+
+    DisposableEffect(appWidgetHost) {
+        appWidgetHost.startListening()
+        onDispose {
+            appWidgetHost.stopListening()
+        }
+    }
+
+    val widgetConfigLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
+            if (appWidgetId != -1) {
+                viewModel.addAppWidgetId(appWidgetId)
+            }
+        }
+    }
+
+    val widgetPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
+            if (appWidgetId != -1) {
+                val appWidgetInfo = appWidgetManager.getAppWidgetInfo(appWidgetId)
+                if (appWidgetInfo.configure != null) {
+                    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)
+                    intent.component = appWidgetInfo.configure
+                    intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                    widgetConfigLauncher.launch(intent)
+                } else {
+                    viewModel.addAppWidgetId(appWidgetId)
+                }
+            }
+        }
+    }
+
+    val pickupWidget = {
+        val appWidgetId = appWidgetHost.allocateAppWidgetId()
+        val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK)
+        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        widgetPickerLauncher.launch(intent)
+    }
 
     val isBiometricEnabled = userSettings?.isBiometricEnabled ?: false
     var isAppUnlocked by remember { mutableStateOf(false) }
@@ -512,16 +566,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             }
                             
                             Spacer(modifier = Modifier.height(16.dp))
-
-                            GoalSuggestionCard(
-                                goalSuggestion = goalSuggestion,
-                                weather = weather,
-                                isNight = isNight,
-                                isTaskAdded = tasksList.any { it.text == goalSuggestion },
-                                onAddTask = { text -> viewModel.addTask(text) }
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
                             
             AnimatedVisibility(
                 visible = agendaVisible,
@@ -536,19 +580,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     }
                                 }
                             }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            DailyGoalsCard(
-                                tasks = tasksList,
-                                weather = weather,
-                                isNight = isNight,
-                                activeTheme = activePremiumTheme,
-                                onAddTask = { text -> viewModel.addTask(text) },
-                                onToggleTask = { item -> viewModel.toggleTask(item) },
-                                onDeleteTask = { item -> viewModel.deleteTask(item) },
-                                isLoading = isRefreshing
-                            )
                             
                             Spacer(modifier = Modifier.height(24.dp))
                             
@@ -569,6 +600,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 healthVisible = healthVisible,
                                 weatherVisible = weatherVisible,
                                 newsVisible = newsVisible,
+                                addedWidgetIds = userSettings?.addedWidgetIds ?: "",
                                 isLoading = isRefreshing,
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
@@ -586,7 +618,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 onNewsClick = { item -> selectedNewsItem = item },
                                 onWeatherClick = { 
                                     isWeatherDetailOpen = true
-                                }
+                                },
+                                onAddWidget = pickupWidget,
+                                onRemoveWidget = { id -> viewModel.removeAppWidgetId(id) }
                             )
                             
                             Spacer(modifier = Modifier.height(64.dp))
@@ -1534,7 +1568,7 @@ fun DailyGoalsCard(
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "無目標",
-                            tint = themed.accent.copy(alpha = 0.4f),
+                            tint = activeTheme.accentColor.copy(alpha = 0.4f),
                             modifier = Modifier.size(48.dp)
                         )
                         Text(
@@ -1574,9 +1608,9 @@ fun DailyGoalsCard(
                                     checked = item.isCompleted,
                                     onCheckedChange = { onToggleTask(item) },
                                     colors = CheckboxDefaults.colors(
-                                        checkedColor = themed.accent,
-                                        checkmarkColor = if (isNight) AuroraMidnight else Color.White,
-                                        uncheckedColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f)
+                                        checkedColor = activeTheme.accentColor,
+                                        checkmarkColor = AuroraMidnight,
+                                        uncheckedColor = Color.White.copy(alpha = 0.4f)
                                     ),
                                     modifier = Modifier.testTag("goal_checkbox_${item.id}")
                                 )
@@ -1589,7 +1623,7 @@ fun DailyGoalsCard(
                                         textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                                         fontWeight = if (item.isCompleted) FontWeight.Normal else FontWeight.Medium
                                     ),
-                                    color = if (item.isCompleted) (if (isNight) Color.White else Color.Black).copy(alpha = 0.45f) else (if (isNight) Color.White else Color.Black),
+                                    color = if (item.isCompleted) Color.White.copy(alpha = 0.45f) else Color.White,
                                     modifier = Modifier.weight(1f)
                                 )
                                 
@@ -1602,7 +1636,7 @@ fun DailyGoalsCard(
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "刪除目標",
-                                        tint = (if (isNight) Color.White else Color.Black).copy(alpha = 0.5f),
+                                        tint = Color.White.copy(alpha = 0.5f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1627,21 +1661,21 @@ fun DailyGoalsCard(
                         Text(
                             "新增自訂生活目標...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f)
+                            color = Color.White.copy(alpha = 0.4f)
                         )
                     },
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = if (isNight) Color.White else Color.Black),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp)
                         .testTag("add_custom_goal_input"),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = if (isNight) Color.White else Color.Black,
-                        unfocusedTextColor = if (isNight) Color.White else Color.Black,
-                        focusedBorderColor = themed.accent,
-                        unfocusedBorderColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.2f),
-                        focusedContainerColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.02f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = activeTheme.accentColor,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                        focusedContainerColor = Color.White.copy(alpha = 0.02f),
                         unfocusedContainerColor = Color.Transparent
                     ),
                     shape = RoundedCornerShape(12.dp)
@@ -1659,15 +1693,15 @@ fun DailyGoalsCard(
                         .size(52.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (newGoalText.isNotBlank()) themed.accent
-                            else (if (isNight) Color.White else Color.Black).copy(alpha = 0.1f)
+                            if (newGoalText.isNotBlank()) activeTheme.accentColor
+                            else Color.White.copy(alpha = 0.1f)
                         )
                         .testTag("add_custom_goal_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "新增目標",
-                        tint = if (newGoalText.isNotBlank()) (if (isNight) AuroraMidnight else Color.White) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
+                        tint = if (newGoalText.isNotBlank()) AuroraMidnight else Color.White.copy(alpha = 0.4f),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -1931,14 +1965,22 @@ fun WidgetGrid(
     healthVisible: Boolean,
     weatherVisible: Boolean,
     newsVisible: Boolean,
+    addedWidgetIds: String,
     isLoading: Boolean = false,
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
     onNewsModeChange: (String) -> Unit,
     onNewsClick: (NewsItem) -> Unit,
-    onWeatherClick: () -> Unit
+    onWeatherClick: () -> Unit,
+    onAddWidget: () -> Unit,
+    onRemoveWidget: (Int) -> Unit
 ) {
+    val widgetIdList = remember(addedWidgetIds) {
+        addedWidgetIds.split(",").filter { it.isNotBlank() }.mapNotNull { it.toIntOrNull() }
+    }
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AnimatedVisibility(
             visible = healthVisible,
@@ -1996,6 +2038,41 @@ fun WidgetGrid(
                 onNewsModeChange = onNewsModeChange,
                 onItemClick = onNewsClick
             )
+        }
+
+        // External System Widgets
+        widgetIdList.forEach { widgetId ->
+            ExternalSystemWidgetCard(
+                appWidgetId = widgetId,
+                weather = weather,
+                isNight = isNight,
+                onRemove = { onRemoveWidget(widgetId) }
+            )
+        }
+
+        // Add Widget Button
+        GlassmorphicCard(
+            modifier = Modifier.fillMaxWidth().testTag("add_widget_button"),
+            onClick = onAddWidget,
+            containerColor = themed.container,
+            borderColors = themed.border,
+            glowColor = themed.glow,
+            isLoading = isLoading
+        ) {
+            Row(
+                modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = themed.accent)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    "新增系統小工具",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = themed.accent
+                )
+            }
         }
     }
 }
@@ -2218,13 +2295,13 @@ fun SleepCard(
             Text(
                 "健康報告建議",
                 style = MaterialTheme.typography.titleSmall,
-                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f),
+                color = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
                 "您的健康狀況分析與建議將顯示於此。",
                 style = MaterialTheme.typography.bodySmall,
-                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f)
+                color = Color.White.copy(alpha = 0.6f)
             )
         }
     }
@@ -4214,5 +4291,68 @@ fun formatEventTimeSpanDetail(startTime: Long, endTime: Long): String {
     val startStr = sdf.format(Date(startTime))
     val endStr = sdf.format(Date(endTime))
     return "$startStr - $endStr"
+}
+
+@Composable
+fun ExternalSystemWidgetCard(
+    appWidgetId: Int,
+    weather: WeatherInfo,
+    isNight: Boolean,
+    onRemove: () -> Unit
+) {
+    val context = LocalContext.current
+    val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
+    val appWidgetHost = remember { AppWidgetHost(context, APPWIDGET_HOST_ID) }
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+
+    val appWidgetInfo = remember(appWidgetId) {
+        appWidgetManager.getAppWidgetInfo(appWidgetId)
+    }
+
+    if (appWidgetInfo == null) return
+
+    GlassmorphicCard(
+        modifier = Modifier.fillMaxWidth().wrapContentHeight(),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        appWidgetInfo.loadLabel(context.packageManager),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.6f)
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "移除",
+                        tint = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            AndroidView(
+                modifier = Modifier.fillMaxWidth(),
+                factory = { ctx ->
+                    appWidgetHost.createView(ctx, appWidgetId, appWidgetInfo).apply {
+                        setAppWidget(appWidgetId, appWidgetInfo)
+                    }
+                },
+                update = { view ->
+                    // View is updated automatically by the host listening
+                }
+            )
+        }
+    }
 }
 

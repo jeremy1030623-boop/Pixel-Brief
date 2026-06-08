@@ -45,7 +45,9 @@ data class UserSettings(
     // Security & Biometrics
     val isBiometricEnabled: Boolean = false,
     // Language & TTS Settings (TTS removed, but used for UI translation)
-    val ttsLanguage: String = "system_default"
+    val ttsLanguage: String = "system_default",
+    // External Widgets
+    val addedWidgetIds: String = ""
 )
 
 @Dao
@@ -99,7 +101,7 @@ interface SleepDataDao {
     suspend fun insertSleepData(data: SleepData)
 }
 
-@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 11, exportSchema = false)
+@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 12, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun taskItemDao(): TaskItemDao

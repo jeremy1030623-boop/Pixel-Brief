@@ -530,6 +530,37 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun addAppWidgetId(id: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = _userSettings.value ?: UserSettings()
+                val ids = current.addedWidgetIds.split(",").filter { it.isNotBlank() }.toMutableList()
+                if (!ids.contains(id.toString())) {
+                    ids.add(id.toString())
+                    val updated = current.copy(addedWidgetIds = ids.joinToString(","))
+                    getDb()?.userSettingsDao()?.saveUserSettings(updated)
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "addAppWidgetId failed", e)
+            }
+        }
+    }
+
+    fun removeAppWidgetId(id: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = _userSettings.value ?: UserSettings()
+                val ids = current.addedWidgetIds.split(",").filter { it.isNotBlank() }.toMutableList()
+                if (ids.remove(id.toString())) {
+                    val updated = current.copy(addedWidgetIds = ids.joinToString(","))
+                    getDb()?.userSettingsDao()?.saveUserSettings(updated)
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("MorningViewModel", "removeAppWidgetId failed", e)
+            }
+        }
+    }
+
     private fun mapWeatherCode(code: Int): String {
         return when (code) {
             0 -> "晴朗"
