@@ -358,15 +358,14 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                 healthVisible = false
                 newsVisible = false
             } else {
-                // Sequenced delays for the boot ceremony:
-                // Spaced by ~200ms with custom Spring settings
+                // Sequenced staggered delays for the briefing modules entrance (Material 3 pattern)
+                delay(150)
+                agendaVisible = true
+                delay(100)
+                healthVisible = true
                 delay(100)
                 weatherVisible = true
-                delay(200)
-                agendaVisible = true
-                delay(200)
-                healthVisible = true
-                delay(200)
+                delay(100)
                 newsVisible = true
             }
         } else {
@@ -478,7 +477,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             
                             AnimatedVisibility(
                                 visible = visible,
-                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f))
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) + 
+                                        slideInVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) { -20 }
                             ) {
                                 GreetingSection(
                                     username = username,
@@ -515,7 +515,8 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             
                             AnimatedVisibility(
                                 visible = agendaVisible,
-                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
+                                        slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
                             ) {
                                 AgendaSection(events, weather.condition, isNight, activePremiumTheme, isRefreshing) {
                                     if (calendarPermissionGranted.value) {
@@ -1202,46 +1203,6 @@ fun GreetingSection(
                             tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF1E293B).copy(alpha = 0.6f),
                             modifier = Modifier.size(16.dp)
                         )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Crossfade(
-                        targetState = secondaryMessage,
-                        label = "greeting_secondary"
-                    ) { targetMsg ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(vertical = 2.dp)
-                        ) {
-                            val (icon, tint) = if (isInteraction) {
-                                Pair(Icons.Default.AutoAwesome, AuroraMint)
-                            } else {
-                                if (isNight) {
-                                    Pair(Icons.Default.Bedtime, Color(0xFFC084FC)) // Soft lavender purple moon
-                                } else {
-                                    Pair(Icons.Default.Cloud, Color(0xFF94A3B8)) // Soft cloud icon
-                                }
-                            }
-                            
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = "氣氛圖示",
-                                tint = tint,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            
-                            Text(
-                                text = targetMsg,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = if (isInteraction) FontWeight.SemiBold else FontWeight.Normal,
-                                    letterSpacing = 0.2.sp
-                                ),
-                                color = if (isInteraction) tint else {
-                                    if (isNight) Color.White.copy(alpha = 0.75f) else Color(0xFF475569)
-                                },
-                                maxLines = 2
-                            )
-                        }
                     }
                 }
             }
@@ -1934,7 +1895,8 @@ fun WidgetGrid(
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AnimatedVisibility(
             visible = healthVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
         ) {
             if (isSleepSynced) {
                 SleepCard(
@@ -1959,7 +1921,8 @@ fun WidgetGrid(
 
         AnimatedVisibility(
             visible = weatherVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
         ) {
             WeatherCard(
                 weather = weather,
@@ -1974,7 +1937,8 @@ fun WidgetGrid(
 
         AnimatedVisibility(
             visible = newsVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) + slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 150f)) { it / 3 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
         ) {
             NewsCard(
                 news = news,
