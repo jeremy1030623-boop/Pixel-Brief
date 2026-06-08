@@ -512,13 +512,23 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             }
                             
                             Spacer(modifier = Modifier.height(16.dp))
+
+                            GoalSuggestionCard(
+                                goalSuggestion = goalSuggestion,
+                                weather = weather,
+                                isNight = isNight,
+                                isTaskAdded = tasksList.any { it.text == goalSuggestion },
+                                onAddTask = { text -> viewModel.addTask(text) }
+                            )
                             
-                            AnimatedVisibility(
-                                visible = agendaVisible,
-                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
-                                        slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
-                            ) {
-                                AgendaSection(events, weather.condition, isNight, activePremiumTheme, isRefreshing) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+            AnimatedVisibility(
+                visible = agendaVisible,
+                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
+                        slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
+            ) {
+                AgendaSection(events, weather, isNight, activePremiumTheme, isRefreshing) {
                                     if (calendarPermissionGranted.value) {
                                         isCalendarOpen = true
                                     } else {
@@ -526,6 +536,19 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     }
                                 }
                             }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            DailyGoalsCard(
+                                tasks = tasksList,
+                                weather = weather,
+                                isNight = isNight,
+                                activeTheme = activePremiumTheme,
+                                onAddTask = { text -> viewModel.addTask(text) },
+                                onToggleTask = { item -> viewModel.toggleTask(item) },
+                                onDeleteTask = { item -> viewModel.deleteTask(item) },
+                                isLoading = isRefreshing
+                            )
                             
                             Spacer(modifier = Modifier.height(24.dp))
                             
@@ -1221,11 +1244,13 @@ fun GreetingSection(
 @Composable
 fun GoalSuggestionCard(
     goalSuggestion: String,
+    weather: WeatherInfo,
     isNight: Boolean,
     isTaskAdded: Boolean,
     onAddTask: (String) -> Unit
 ) {
     if (goalSuggestion.isBlank()) return
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
 
     // Setup an infinite transition for subtle, beautiful interactive animation (pulsing glow/size of the lightbulb)
     val infiniteTransition = rememberInfiniteTransition(label = "goal_icon_glow")
@@ -1249,28 +1274,14 @@ fun GoalSuggestionCard(
     )
 
     // Layout colors based on isNight
-    val containerColor = if (isNight) {
-        Color(0xFF1E293B).copy(alpha = 0.85f) // Rich celestial twilight dark indigo slate
-    } else {
-        Color(0xFFF1F5F9).copy(alpha = 0.95f) // Soft cool light mineral slate
-    }
-
-    val primaryTextColor = if (isNight) Color.White else Color(0xFF1E293B)
-    val secondaryTextColor = if (isNight) Color.White.copy(alpha = 0.8f) else Color(0xFF334155)
-    val borderBrush = if (isNight) {
-        Brush.linearGradient(listOf(AuroraMint.copy(alpha = 0.5f), AuroraLavender.copy(alpha = 0.3f)))
-    } else {
-        Brush.linearGradient(listOf(Color(0xFF10B981).copy(alpha = 0.4f), Color(0xFF3B82F6).copy(alpha = 0.3f)))
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.5.dp, borderBrush),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(containerColor = themed.container),
+        border = BorderStroke(1.5.dp, Brush.linearGradient(themed.border)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -1326,7 +1337,7 @@ fun GoalSuggestionCard(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.5.sp
                         ),
-                        color = primaryTextColor
+                        color = if (isNight) Color.White else Color(0xFF1E293B)
                     )
                 }
             }
@@ -1340,7 +1351,7 @@ fun GoalSuggestionCard(
                     lineHeight = 26.sp,
                     fontWeight = FontWeight.Medium
                 ),
-                color = secondaryTextColor,
+                color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.9f),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -1392,6 +1403,7 @@ fun GoalSuggestionCard(
 @Composable
 fun DailyGoalsCard(
     tasks: List<com.example.data.TaskItem>,
+    weather: WeatherInfo,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     onAddTask: (String) -> Unit,
@@ -1400,6 +1412,7 @@ fun DailyGoalsCard(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
     val totalCount = tasks.size
     val completedCount = tasks.count { it.isCompleted }
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
@@ -1414,9 +1427,9 @@ fun DailyGoalsCard(
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = Color(0xFF0C1B1E),
-        borderColors = listOf(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF059669).copy(alpha = 0.05f)),
-        glowColor = Color(0xFF10B981),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isLoading
     ) {
         Column(
@@ -1433,13 +1446,13 @@ fun DailyGoalsCard(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(activeTheme.accentColor.copy(alpha = 0.2f)),
+                        .background(themed.accent.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Goals Icon",
-                        tint = activeTheme.accentColor,
+                        tint = themed.accent,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -1451,7 +1464,7 @@ fun DailyGoalsCard(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         ),
-                        color = Color.White
+                        color = if (isNight) Color.White else Color(0xFF1E293B)
                     )
                     
                     if (totalCount > 0) {
@@ -1463,7 +1476,7 @@ fun DailyGoalsCard(
                         Text(
                             text = progressMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f)
+                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -1481,12 +1494,12 @@ fun DailyGoalsCard(
                     Text(
                         text = "完成進度",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = (if (isNight) Color.White else Color(0xFF1D2939)).copy(alpha = 0.6f)
                     )
                     Text(
                         text = "${(progress * 100).toInt()}%",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = activeTheme.accentColor
+                        color = themed.accent
                     )
                 }
                 
@@ -1494,8 +1507,8 @@ fun DailyGoalsCard(
                 
                 LinearProgressIndicator(
                     progress = { animatedProgress },
-                    color = activeTheme.accentColor,
-                    trackColor = activeTheme.secondaryAccent.copy(alpha = 0.2f),
+                    color = themed.accent,
+                    trackColor = themed.accent.copy(alpha = 0.2f),
                     strokeCap = StrokeCap.Round,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1521,18 +1534,18 @@ fun DailyGoalsCard(
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "無目標",
-                            tint = activeTheme.accentColor.copy(alpha = 0.4f),
+                            tint = themed.accent.copy(alpha = 0.4f),
                             modifier = Modifier.size(48.dp)
                         )
                         Text(
                             text = "今日尚未建立生活目標",
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = if (isNight) Color.White else Color(0xFF1E293B)
                         )
                         Text(
                             text = "可接受上方的「今日智慧生活目標」\n或在下方新增自訂生活目標！🌟",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -1561,9 +1574,9 @@ fun DailyGoalsCard(
                                     checked = item.isCompleted,
                                     onCheckedChange = { onToggleTask(item) },
                                     colors = CheckboxDefaults.colors(
-                                        checkedColor = activeTheme.accentColor,
-                                        checkmarkColor = AuroraMidnight,
-                                        uncheckedColor = Color.White.copy(alpha = 0.4f)
+                                        checkedColor = themed.accent,
+                                        checkmarkColor = if (isNight) AuroraMidnight else Color.White,
+                                        uncheckedColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f)
                                     ),
                                     modifier = Modifier.testTag("goal_checkbox_${item.id}")
                                 )
@@ -1576,7 +1589,7 @@ fun DailyGoalsCard(
                                         textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                                         fontWeight = if (item.isCompleted) FontWeight.Normal else FontWeight.Medium
                                     ),
-                                    color = if (item.isCompleted) Color.White.copy(alpha = 0.45f) else Color.White,
+                                    color = if (item.isCompleted) (if (isNight) Color.White else Color.Black).copy(alpha = 0.45f) else (if (isNight) Color.White else Color.Black),
                                     modifier = Modifier.weight(1f)
                                 )
                                 
@@ -1589,7 +1602,7 @@ fun DailyGoalsCard(
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "刪除目標",
-                                        tint = Color.White.copy(alpha = 0.5f),
+                                        tint = (if (isNight) Color.White else Color.Black).copy(alpha = 0.5f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1614,21 +1627,21 @@ fun DailyGoalsCard(
                         Text(
                             "新增自訂生活目標...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.4f)
+                            color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f)
                         )
                     },
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = if (isNight) Color.White else Color.Black),
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp)
                         .testTag("add_custom_goal_input"),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = activeTheme.accentColor,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        focusedContainerColor = Color.White.copy(alpha = 0.02f),
+                        focusedTextColor = if (isNight) Color.White else Color.Black,
+                        unfocusedTextColor = if (isNight) Color.White else Color.Black,
+                        focusedBorderColor = themed.accent,
+                        unfocusedBorderColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.2f),
+                        focusedContainerColor = (if (isNight) Color.White else Color.Black).copy(alpha = 0.02f),
                         unfocusedContainerColor = Color.Transparent
                     ),
                     shape = RoundedCornerShape(12.dp)
@@ -1646,15 +1659,15 @@ fun DailyGoalsCard(
                         .size(52.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (newGoalText.isNotBlank()) activeTheme.accentColor
-                            else Color.White.copy(alpha = 0.1f)
+                            if (newGoalText.isNotBlank()) themed.accent
+                            else (if (isNight) Color.White else Color.Black).copy(alpha = 0.1f)
                         )
                         .testTag("add_custom_goal_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "新增目標",
-                        tint = if (newGoalText.isNotBlank()) AuroraMidnight else Color.White.copy(alpha = 0.4f),
+                        tint = if (newGoalText.isNotBlank()) (if (isNight) AuroraMidnight else Color.White) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -1798,28 +1811,66 @@ fun GlassmorphicCard(
     }
 }
 
+data class WeatherThemedColors(
+    val container: Color,
+    val border: List<Color>,
+    val glow: Color,
+    val accent: Color
+)
+
+fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean): WeatherThemedColors {
+    val solid = getWeatherSolidColor(weather, isNight)
+    
+    val accent = if (isNight) {
+        when {
+            weather.condition.contains("雨") || weather.condition.contains("雷") -> Color(0xFF60A5FA)
+            weather.condition.contains("雪") -> Color(0xFF93C5FD)
+            weather.condition.contains("晴") -> Color(0xFFFDE047)
+            weather.condition.contains("霧") || weather.condition.contains("陰") -> Color(0xFF94A3B8)
+            else -> Color(0xFFA78BFA)
+        }
+    } else {
+        when {
+            weather.condition.contains("雨") || weather.condition.contains("雷") -> Color(0xFF2563EB)
+            weather.condition.contains("雪") -> Color(0xFF0EA5E9)
+            weather.condition.contains("晴") -> Color(0xFFD97706)
+            weather.condition.contains("霧") || weather.condition.contains("陰") -> Color(0xFF475569)
+            else -> Color(0xFF7C3AED)
+        }
+    }
+
+    return WeatherThemedColors(
+        container = if (isNight) solid.copy(alpha = 0.85f) else solid.copy(alpha = 0.95f),
+        border = listOf(accent.copy(alpha = 0.2f), accent.copy(alpha = 0.05f)),
+        glow = accent.copy(alpha = if (isNight) 0.35f else 0.15f),
+        accent = accent
+    )
+}
+
 @Composable
 fun AgendaSection(
     events: List<com.example.data.CalendarEvent>,
-    condition: String,
+    weather: WeatherInfo,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     isRefreshing: Boolean = false,
     onAuthorize: () -> Unit
 ) {
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    
     GlassmorphicCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onAuthorize,
-        containerColor = Color(0xFF0F1E3A),
-        borderColors = listOf(Color(0xFF60A5FA).copy(alpha = 0.15f), Color(0xFF2563EB).copy(alpha = 0.05f)),
-        glowColor = Color(0xFF60A5FA),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isRefreshing
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
             Spacer(modifier = Modifier.height(12.dp))
             if (events.isEmpty()) {
-                Text("今天沒有行程", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+                Text("今天沒有行程", color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
             } else {
                 events.forEach { event ->
                     Row(
@@ -1830,11 +1881,7 @@ fun AgendaSection(
                     ) {
                         Surface(
                             shape = MaterialTheme.shapes.small,
-                            color = when {
-                                condition.contains("雨") -> Color(0xFF334155)
-                                condition.contains("多雲") -> Color(0xFF3F51B5)
-                                else -> Color(0xFF7C2D12)
-                            },
+                            color = themed.accent.copy(alpha = 0.8f),
                             modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -1851,12 +1898,12 @@ fun AgendaSection(
                                 text = event.title,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                color = if (isNight) Color.White else Color(0xFF1E293B)
                             )
                             Text(
                                 text = "在 ${getTimeString(event.startTime)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.85f)
+                                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f)
                             )
                         }
                     }
@@ -1901,7 +1948,7 @@ fun WidgetGrid(
             if (isSleepSynced) {
                 SleepCard(
                     sleep = sleepInfo,
-                    condition = weather.condition,
+                    weather = weather,
                     lastSyncTime = lastSyncTime,
                     isNight = isNight,
                     activeTheme = activeTheme,
@@ -1910,7 +1957,7 @@ fun WidgetGrid(
                 )
             } else {
                 SyncHealthReminderCard(
-                    condition = weather.condition,
+                    weather = weather,
                     isNight = isNight,
                     activeTheme = activeTheme,
                     isLoading = isLoading,
@@ -1926,10 +1973,8 @@ fun WidgetGrid(
         ) {
             WeatherCard(
                 weather = weather,
-                condition = weather.condition,
                 weatherUnit = weatherUnit,
                 isNight = isNight,
-                activeTheme = activeTheme,
                 isLoading = isLoading,
                 onWeatherClick = onWeatherClick
             )
@@ -1942,7 +1987,7 @@ fun WidgetGrid(
         ) {
             NewsCard(
                 news = news,
-                condition = weather.condition,
+                weather = weather,
                 displayedNewsCount = displayedNewsCount,
                 newsMode = newsMode,
                 isNight = isNight,
@@ -1957,7 +2002,7 @@ fun WidgetGrid(
 
 @Composable
 fun SyncHealthReminderCard(
-    condition: String,
+    weather: WeatherInfo,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     isLoading: Boolean = false,
@@ -1967,12 +2012,13 @@ fun SyncHealthReminderCard(
     var isSyncing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = Color(0xFF15122E),
-        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.15f), Color(0xFF7C3AED).copy(alpha = 0.05f)),
-        glowColor = Color(0xFFA78BFA),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isLoading
     ) {
         Column(
@@ -1985,13 +2031,13 @@ fun SyncHealthReminderCard(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(activeTheme.accentColor),
+                        .background(themed.accent),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.HealthAndSafety,
                         contentDescription = "Sync Health Reminder",
-                        tint = AuroraMidnight,
+                        tint = if (isNight) AuroraMidnight else Color.White,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -2001,12 +2047,12 @@ fun SyncHealthReminderCard(
                         "健康資料尚未同步",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = if (isNight) Color.White else Color(0xFF1E293B)
                     )
                     Text(
                         "同步 Google Fit 與睡眠資訊以提供專屬今日簡報",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.9f)
+                        color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.9f)
                     )
                 }
             }
@@ -2027,15 +2073,15 @@ fun SyncHealthReminderCard(
                 },
                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("sync_health_button"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = activeTheme.accentColor,
-                    contentColor = AuroraMidnight
+                    containerColor = themed.accent,
+                    contentColor = if (isNight) AuroraMidnight else Color.White
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 if (isSyncing) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
-                        color = Color.White,
+                        color = if (isNight) AuroraMidnight else Color.White,
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -2053,7 +2099,7 @@ fun SyncHealthReminderCard(
 @Composable
 fun SleepCard(
     sleep: SleepInfo,
-    condition: String,
+    weather: WeatherInfo,
     lastSyncTime: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
@@ -2064,12 +2110,13 @@ fun SleepCard(
     var isSyncing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
 
     GlassmorphicCard(
         modifier = modifier,
-        containerColor = Color(0xFF15122E),
-        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.15f), Color(0xFF7C3AED).copy(alpha = 0.05f)),
-        glowColor = Color(0xFFA78BFA),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isLoading
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
@@ -2083,13 +2130,13 @@ fun SleepCard(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(MaterialTheme.shapes.small)
-                            .background(activeTheme.accentColor),
+                            .background(themed.accent),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             Icons.Default.Bedtime,
                             contentDescription = null,
-                            tint = AuroraMidnight,
+                            tint = if (isNight) AuroraMidnight else Color.White,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -2099,12 +2146,12 @@ fun SleepCard(
                             "今日睡眠品質",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = if (isNight) Color.White else Color(0xFF1E293B)
                         )
                         Text(
                             "上次同步: $lastSyncTime",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -2126,14 +2173,14 @@ fun SleepCard(
                         if (isSyncing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = Color.White,
+                                color = if (isNight) Color.White else Color(0xFF1E293B),
                                 strokeWidth = 1.5.dp
                             )
                         } else {
                             Icon(
                                 Icons.Default.Sync,
                                 contentDescription = "Re-sync",
-                                tint = Color.White.copy(alpha = 0.85f),
+                                tint = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -2149,32 +2196,35 @@ fun SleepCard(
                     icon = Icons.Default.Bedtime,
                     label = "睡眠時數",
                     value = "${"%.1f".format(sleep.hours)}h",
-                    tint = activeTheme.accentColor
+                    tint = themed.accent,
+                    isNight = isNight
                 )
                 SleepMetricItem(
                     icon = Icons.Default.Air,
                     label = "打鼾",
                     value = "${sleep.snoringMinutes}m",
-                    tint = activeTheme.secondaryAccent
+                    tint = themed.accent.copy(alpha = 0.8f),
+                    isNight = isNight
                 )
                 SleepMetricItem(
                     icon = Icons.Default.Sick,
                     label = "咳嗽",
                     value = "${sleep.coughCount}次",
-                    tint = Color(0xFFF87171)
+                    tint = Color(0xFFF87171),
+                    isNight = isNight
                 )
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 "健康報告建議",
                 style = MaterialTheme.typography.titleSmall,
-                color = Color.White.copy(alpha = 0.8f),
+                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f),
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Text(
                 "您的健康狀況分析與建議將顯示於此。",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
+                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f)
             )
         }
     }
@@ -2186,7 +2236,8 @@ fun SleepMetricItem(
     icon: ImageVector,
     label: String,
     value: String,
-    tint: Color
+    tint: Color,
+    isNight: Boolean
 ) {
     Column(
         modifier = modifier,
@@ -2194,48 +2245,28 @@ fun SleepMetricItem(
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f))
     }
 }
 
 @Composable
 fun WeatherCard(
     weather: WeatherInfo,
-    condition: String,
     weatherUnit: String,
     isNight: Boolean,
-    activeTheme: PremiumLayoutTheme,
     isLoading: Boolean = false,
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val weatherCardBg = remember(condition, isNight) {
-        getCardBackgroundColor(condition, isNight)
-    }
-    val weatherBorderColors = remember(condition) {
-        when {
-            condition.contains("雨") || condition.contains("雷") -> listOf(Color(0xFF60A5FA).copy(alpha = 0.15f), Color(0xFF2563EB).copy(alpha = 0.05f))
-            condition.contains("雪") -> listOf(Color(0xFF93C5FD).copy(alpha = 0.15f), Color(0xFFE0F2FE).copy(alpha = 0.05f))
-            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> listOf(Color(0xFF94A3B8).copy(alpha = 0.12f), Color(0xFF475569).copy(alpha = 0.05f))
-            else -> listOf(Color(0xFFFEF08A).copy(alpha = 0.18f), Color(0xFFF59E0B).copy(alpha = 0.05f))
-        }
-    }
-    val weatherGlowColor = remember(condition) {
-        when {
-            condition.contains("雨") || condition.contains("雷") -> Color(0xFF60A5FA)
-            condition.contains("雪") -> Color(0xFF93C5FD)
-            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> Color(0xFF94A3B8)
-            else -> Color(0xFFF59E0B)
-        }
-    }
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
 
     GlassmorphicCard(
         modifier = modifier,
         onClick = onWeatherClick,
-        containerColor = weatherCardBg,
-        borderColors = weatherBorderColors,
-        glowColor = weatherGlowColor,
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isLoading
     ) {
         Row(
@@ -2265,14 +2296,14 @@ fun WeatherCard(
                         Text(
                             text = weather.locationName,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = if (isNight) Color.White else Color(0xFF1E293B)
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         // Smart positioning tag
                         Box(
                             modifier = Modifier
                                 .background(
-                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.08f),
+                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.08f),
                                     shape = RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
@@ -2280,13 +2311,13 @@ fun WeatherCard(
                             Text(
                                 text = if (weather.isGpsLocated) "GPS 實時" else "預設城市",
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                                color = if (weather.isGpsLocated) AuroraMint else Color.White.copy(alpha = 0.6f)
+                                color = if (weather.isGpsLocated) AuroraMint else (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f)
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
+                    Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
+                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f))
                 }
             }
             
@@ -2294,7 +2325,7 @@ fun WeatherCard(
                 text = formatTemperature(weather.currentTemp, weatherUnit),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.White
+                color = if (isNight) Color.White else Color(0xFF1E293B)
             )
         }
     }
@@ -2303,7 +2334,7 @@ fun WeatherCard(
 @Composable
 fun NewsCard(
     news: List<NewsItem>,
-    condition: String,
+    weather: WeatherInfo,
     displayedNewsCount: Int,
     newsMode: String,
     isNight: Boolean,
@@ -2312,11 +2343,13 @@ fun NewsCard(
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
+    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+
     GlassmorphicCard(
         modifier = Modifier,
-        containerColor = Color(0xFF16130F),
-        borderColors = listOf(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFD97706).copy(alpha = 0.05f)),
-        glowColor = Color(0xFFF59E0B),
+        containerColor = themed.container,
+        borderColors = themed.border,
+        glowColor = themed.glow,
         isLoading = isLoading
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -2329,7 +2362,7 @@ fun NewsCard(
                     "今日重點新聞",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = if (isNight) Color.White else Color(0xFF1E293B),
                     modifier = Modifier.weight(1f)
                 )
                 
@@ -2346,7 +2379,7 @@ fun NewsCard(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (active) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                                    if (active) (if (isNight) Color.White else Color.Black).copy(alpha = 0.15f) else Color.Transparent,
                                     RoundedCornerShape(50)
                                 )
                                 .clickable { if (!active) onNewsModeChange(code) }
@@ -2357,7 +2390,7 @@ fun NewsCard(
                                 text = label,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
-                                color = if (active) Color.White else Color.White.copy(alpha = 0.65f)
+                                color = if (active) (if (isNight) Color.White else Color.Black) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -2367,9 +2400,9 @@ fun NewsCard(
             if (news.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFCE93D8), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = themed.accent, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
+                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.7f))
                     }
                 }
             } else {
@@ -2385,18 +2418,18 @@ fun NewsCard(
                             text = item.title,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = if (isNight) Color.White else Color(0xFF334155)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.5f),
                             fontWeight = FontWeight.Medium
                         )
                     }
                     if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }

@@ -26,10 +26,17 @@ private val DarkColorScheme =
         onTertiary = OnTertiaryDark,
         tertiaryContainer = TertiaryContainerDark,
         onTertiaryContainer = OnTertiaryContainerDark,
-        background = AuroraMidnight,
-        surface = AuroraDeepIndigo,
-        onBackground = Color.White,
-        onSurface = Color.White
+        error = ErrorDark,
+        onError = OnErrorDark,
+        errorContainer = ErrorContainerDark,
+        onErrorContainer = OnErrorContainerDark,
+        background = BackgroundDark,
+        surface = SurfaceDark,
+        onBackground = OnBackgroundDark,
+        onSurface = OnSurfaceDark,
+        surfaceVariant = SurfaceVariantDark,
+        onSurfaceVariant = OnSurfaceVariantDark,
+        outline = OutlineDark
     )
 
 private val LightColorScheme =
@@ -46,10 +53,17 @@ private val LightColorScheme =
         onTertiary = OnTertiaryLight,
         tertiaryContainer = TertiaryContainerLight,
         onTertiaryContainer = OnTertiaryContainerLight,
-        background = Color(0xFFF8FAFC),
-        surface = Color.White,
-        onBackground = AuroraMidnight,
-        onSurface = AuroraMidnight
+        error = ErrorLight,
+        onError = OnErrorLight,
+        errorContainer = ErrorContainerLight,
+        onErrorContainer = OnErrorContainerLight,
+        background = BackgroundLight,
+        surface = SurfaceLight,
+        onBackground = OnBackgroundLight,
+        onSurface = OnSurfaceLight,
+        surfaceVariant = SurfaceVariantLight,
+        onSurfaceVariant = OnSurfaceVariantLight,
+        outline = OutlineLight
     )
 
 @Composable
