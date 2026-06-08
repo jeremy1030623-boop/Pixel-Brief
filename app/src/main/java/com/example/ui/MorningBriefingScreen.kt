@@ -332,8 +332,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         val requiredPermissions = mutableListOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.READ_CALENDAR,
-            Manifest.permission.RECORD_AUDIO
+            Manifest.permission.READ_CALENDAR
         )
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             requiredPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -766,6 +765,35 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
             )
             
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Section: Morning Weather Overview (New)
+            Text(
+                "• 晨光天氣概覽",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        weather.description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        lineHeight = 26.sp,
+                        color = if (isNight) Color.White else Color(0xFF334155)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(28.dp))
 
             // Section: Temperature Trend (Next 12 Hours)
@@ -1683,7 +1711,7 @@ fun TimeGreetingText(
     isNight: Boolean
 ) {
     val mainBrief = remember(time, eventText, weather, weatherUnit, isNight) {
-        "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°，今天最高溫 ${formatTemperature(weather.maxTemp, weatherUnit)}°；最低溫 ${formatTemperature(weather.minTemp, weatherUnit)}°。$eventText"
+        "現在時間 $time，今天天氣狀況 ${weather.condition}，目前 ${formatTemperature(weather.currentTemp, weatherUnit)}°。${weather.description} $eventText"
     }
 
     Column {
@@ -2911,8 +2939,8 @@ fun SettingsScreen(
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                         SettingsRow(
-                            label = "呼吸偵測授權",
-                            description = "讀取音效打鼾辨識與咳嗽頻率統計健康紀錄",
+                            label = "睡眠呼吸狀態讀取",
+                            description = "從 Health Connect 讀取昨夜睡眠中的打鼾辨識與咳嗽數據紀錄",
                             checked = editBreathingAudioSnorePermission,
                             onCheckedChange = { editBreathingAudioSnorePermission = it },
                             testTag = "audio_cough_settings_switch"

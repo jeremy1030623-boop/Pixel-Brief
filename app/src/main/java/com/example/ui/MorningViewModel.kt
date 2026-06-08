@@ -216,15 +216,44 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     }.flowOn(Dispatchers.Default)
 
     private fun getSecondaryMessageForHour(hour: Int): String {
-        return when (hour) {
-            in 5..8 -> "早安晨光！早晨喝杯溫水有助於啟動消化，今天也要元氣滿滿 🌱"
-            in 9..11 -> "腦力黃金時刻！當前專注力最高，快來消滅今天最重要的難關吧 🔥"
-            in 12..13 -> "午餐時間到了！希望你今天享用了美味午餐，記得稍微走動伸展一下 🍱"
-            in 14..17 -> "午後充電中！如果感到些微瞌睡，伸個大懶腰，為下半場注滿高能活力 ⚡️"
-            in 18..20 -> "忙碌了一天辛苦啦！現在放慢節奏，享受愜意的個人時光或美味晚餐 🌌"
-            in 21..23 -> "悠閒的深夜時光。建議放開公事、調暗燈光，預備香甜高品質的美夢 💤"
-            else -> "深夜探險家 🦉！夜深人靜思緒靈敏，但也別忘了優質睡眠是最好的充能器哦"
+        val messages = when (hour) {
+            in 5..8 -> listOf(
+                "早安晨光！早晨喝杯溫水有助於啟動消化，今天也要元氣滿滿 🌱",
+                "清晨是最適合規劃的一刻，深呼吸，讓我們一起迎接燦爛的一天 ✨",
+                "又是充滿希望的晨曦，喝杯咖啡或清茶，喚醒沉睡的身心吧 ☕"
+            )
+            in 9..11 -> listOf(
+                "腦力黃金時刻！當前專注力最高，快來消滅今天最重要的難關吧 🔥",
+                "高效執行的時間點，保持專注，你正在為夢想鋪路呢 🚀",
+                "思緒靈敏的早晨，讓創意流動，完成那些延宕已久的小目標 💡"
+            )
+            in 12..13 -> listOf(
+                "午餐時間到了！希望你今天享用了美味午餐，記得稍微走動伸展一下 🍱",
+                "休息是為了走更長遠的路，放下手邊工作，享受一段寧靜的午間時光 💤",
+                "補充能量的時刻，均衡的營養是下午高效輸出的基石 🍎"
+            )
+            in 14..17 -> listOf(
+                "午後充電中！如果感到些微瞌睡，伸個大懶腰，為下半場注滿高能活力 ⚡️",
+                "下午的陽光依然溫暖，適時的短暫休息能讓你的創造力成倍成長 🌊",
+                "最後的衝刺階段，專注於收尾工作，期待晚上的悠閒時光 🌅"
+            )
+            in 18..20 -> listOf(
+                "忙碌了一天辛苦啦！現在放慢節奏，享受愜意的個人時光或美味晚餐 🌌",
+                "華燈初上，讓身心平靜下來，回味今日的小確幸，洗去一身疲憊 🛁",
+                "夜晚是靈魂的歸宿，與家人共進晚餐或是給自己一段深度閱讀的時間 📖"
+            )
+            in 21..23 -> listOf(
+                "悠閒的深夜時光。建議放開公事、調暗燈光，預備香甜高品質的美夢 💤",
+                "靜謐的夜，適合冥想與反思。整理思緒，為明天的綻放蓄勢待發 🌙",
+                "讓所有的喧囂遠離。溫柔地對自己說聲晚安，好眠是最好的療癒 🛌"
+            )
+            else -> listOf(
+                "深夜探險家 🦉！夜深人靜思緒靈敏，但也別忘了優質睡眠是最好的充能器哦",
+                "星光閃爍的凌晨，如果還未入眠，試著深呼吸放鬆，讓思維慢慢沉靜 🌠",
+                "萬籟俱寂，這是屬於你的私密時刻，但也要記得休息是為了迎接明日的曙光 ☀️"
+            )
         }
+        return messages.random()
     }
 
     val timeState: StateFlow<TimeState> = combine(_currentTimeFlow, _interactionMessage) { (time, greeting), interactionMsg ->
@@ -504,17 +533,43 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     private fun mapWeatherCode(code: Int): String {
         return when (code) {
             0 -> "晴朗"
-            1, 2 -> "多雲時晴"
-            3 -> "陰天"
-            45, 48 -> "起霧"
-            51, 53, 55 -> "毛毛雨"
+            1, 2, 3 -> "晴時多雲"
+            45, 48 -> "霧氣繚繞"
+            51, 53, 55 -> "細雨霏霏"
+            56, 57 -> "凍雨"
             61, 63 -> "局部陣雨"
-            65 -> "大雨"
-            71, 73, 75 -> "降雪"
+            65 -> "連綿大雨"
+            66, 67 -> "冰雨"
+            71, 73, 75 -> "雪花紛飛"
             80, 81, 82 -> "短暫陣雨"
-            95, 96, 99 -> "雷陣雨"
+            85, 86 -> "短暫陣雪"
+            95, 96, 99 -> "雷雨交加"
             else -> "多雲"
         }
+    }
+
+    private fun getWeatherDescription(info: WeatherInfo): String {
+        val baseDescription = when {
+            info.condition.contains("晴朗") -> "陽光普照，藍天如洗。"
+            info.condition.contains("晴時多雲") -> "陽光穿透雲層，氣候宜人。"
+            info.condition.contains("多雲") -> "雲量較多，陽光偶爾露臉。"
+            info.condition.contains("陰") -> "天空陰沉，氣氛寧靜。"
+            info.condition.contains("雨") -> "細雨綿綿，增添了幾分詩意。"
+            info.condition.contains("雷") -> "雷聲陣陣，請注意安全。"
+            info.condition.contains("霧") -> "晨霧迷濛，宛如仙境。"
+            info.condition.contains("雪") -> "白雪皚皚，世界銀裝素裹。"
+            else -> "今日氣候平穩，適合開啟新的一天。"
+        }
+
+        val tempAdvice = when {
+            info.currentTemp >= 30 -> "氣溫偏高，記得多補充水分，預防中暑。"
+            info.currentTemp <= 15 -> "天氣較冷，建議穿上保暖衣物再出門。"
+            else -> "溫度舒適，正是外出活動的好時機。"
+        }
+
+        val rainAdvice = if (info.precipitationProb > 30) "降雨機率較高，出門記得帶把傘。" else ""
+
+        return "$baseDescription $tempAdvice $rainAdvice".trim()
     }
 
     fun fetchData(isManual: Boolean = false) {
@@ -550,7 +605,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                                     val temp = tempStr?.toFloatOrNull()?.toInt()
                                     
                                     if (temp != null && condStr != null) {
-                                        systemWeather = WeatherInfo(
+                                    val baseWeather = WeatherInfo(
                                             condition = condStr,
                                             currentTemp = temp,
                                             maxTemp = temp + 4,
@@ -558,6 +613,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                                             locationName = finalCity,
                                             isGpsLocated = isGps
                                         )
+                                        systemWeather = baseWeather.copy(description = getWeatherDescription(baseWeather))
                                         android.util.Log.d("MorningViewModel", "Loaded weather from ContentProvider: $systemWeather")
                                     }
                                 }
@@ -571,7 +627,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                         systemWeather!!.copy(locationName = finalCity, isGpsLocated = isGps)
                     } else {
                         val weatherData = OpenMeteoClient.service.getForecast(latitude = lat, longitude = lon)
-                        WeatherInfo(
+                        val baseWeather = WeatherInfo(
                             condition = mapWeatherCode(weatherData.current.weather_code),
                             currentTemp = weatherData.current.temperature_2m.toInt(),
                             maxTemp = weatherData.daily.temperature_2m_max.firstOrNull()?.toInt() ?: 30,
@@ -584,17 +640,19 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
                             locationName = finalCity,
                             isGpsLocated = isGps
                         )
+                        baseWeather.copy(description = getWeatherDescription(baseWeather))
                     }
                 } catch (e: Throwable) {
                     android.util.Log.e("MorningViewModel", "Open-Meteo forecast fetch failed", e)
-                    WeatherInfo(
-                        condition = "多雲時晴",
+                    val baseWeather = WeatherInfo(
+                        condition = "晴時多雲",
                         currentTemp = 28,
                         maxTemp = 32,
                         minTemp = 24,
                         locationName = finalCity,
                         isGpsLocated = isGps
                     )
+                    baseWeather.copy(description = getWeatherDescription(baseWeather))
                 }
                 _weatherInfo.value = newWeather
 
@@ -660,6 +718,14 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
             city.contains("宜蘭") -> Pair(24.7570, 121.7530)
             city.contains("花蓮") -> Pair(23.9871, 121.6016)
             city.contains("台東") || city.contains("臺東") -> Pair(22.7583, 121.1444)
+            city.contains("苗栗") -> Pair(24.5601, 120.8210)
+            city.contains("彰化") -> Pair(24.0817, 120.5385)
+            city.contains("南投") -> Pair(23.9101, 120.6860)
+            city.contains("雲林") -> Pair(23.7092, 120.4313)
+            city.contains("屏東") -> Pair(22.6761, 120.4885)
+            city.contains("澎湖") -> Pair(23.5656, 119.5793)
+            city.contains("金門") -> Pair(24.4361, 118.3186)
+            city.contains("馬祖") -> Pair(26.1558, 119.9289)
             else -> Pair(25.0330, 121.5654)
         }
     }

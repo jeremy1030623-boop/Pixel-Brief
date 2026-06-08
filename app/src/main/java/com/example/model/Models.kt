@@ -14,7 +14,8 @@ data class WeatherInfo(
     val uvIndex: Float = 5.0f,
     val iconRes: Int = 0, // In a real app, this would be an icon ID
     val locationName: String = "台北",
-    val isGpsLocated: Boolean = false
+    val isGpsLocated: Boolean = false,
+    val description: String = "今日天氣晴朗舒適，適合外出活動。"
 )
 
 data class SleepInfo(

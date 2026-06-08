@@ -219,7 +219,7 @@ object LanguageTranslator {
             "morning_calendar" -> "晨間行程行事曆"
             "ai_briefing" -> "端側/雲端 AI 晨間簡報摘要"
             "health_status" -> "健康狀態監測"
-            "breathing_monitor" -> "呼吸感應防護與咳嗽快篩"
+            "breathing_monitor" -> "睡眠呼吸紀錄讀取權限"
             "daily_news" -> "每日新聞資訊"
             "daily_goal" -> "每日推薦目標"
             "toast_saved" -> "設定已成功儲存！"
