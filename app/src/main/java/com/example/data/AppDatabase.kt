@@ -44,8 +44,8 @@ data class UserSettings(
     val avatarGradientIndex: Int = 0,
     // Security & Biometrics
     val isBiometricEnabled: Boolean = false,
-    // Language & TTS Settings
-    val ttsLanguage: String = "zh_TW"
+    // Language & TTS Settings (TTS removed, but used for UI translation)
+    val ttsLanguage: String = "system_default"
 )
 
 @Dao

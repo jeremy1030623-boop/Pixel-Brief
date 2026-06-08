@@ -4,8 +4,9 @@ import java.util.Locale
 
 object LanguageTranslator {
 
-    // 34 Supported Languages (33+ languages in total)
+    // 35 Supported Languages (System Default + 34 manual languages)
     val supportedLanguages = listOf(
+        "system_default" to Pair("系統預設 (System Default)", "自動"),
         "zh_TW" to Pair("繁體中文 (台灣)", "繁中"),
         "zh_HK" to Pair("廣東話 (香港)", "粵語"),
         "zh_CN" to Pair("简体中文 (中国)", "简中"),
@@ -186,11 +187,13 @@ object LanguageTranslator {
      * Get translated text string by key and fallback
      */
     fun get(key: String, lang: String): String {
+        val actualLang = if (lang == "system_default") Locale.getDefault().toString() else lang
+        
         // Simple direct translation fallbacks
-        val langKey = if (lang.startsWith("zh")) {
-            if (lang.contains("CN")) "zh_CN" else if (lang.contains("HK")) "zh_HK" else "zh_TW"
+        val langKey = if (actualLang.startsWith("zh")) {
+            if (actualLang.contains("CN")) "zh_CN" else if (actualLang.contains("HK")) "zh_HK" else "zh_TW"
         } else {
-            lang.substringBefore("_")
+            actualLang.substringBefore("_")
         }
         
         val localizedMap = translations[langKey]
@@ -242,9 +245,10 @@ object LanguageTranslator {
         currentTemp: String,
         eventCount: Int
     ): String {
+        val actualLang = if (lang == "system_default") Locale.getDefault().toString() else lang
         val cleanGreeting = greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
         
-        return when (lang) {
+        return when (actualLang) {
             "en" -> {
                 val engGreeting = when {
                     greeting.contains("早") -> "Good morning"
@@ -393,8 +397,9 @@ object LanguageTranslator {
                 "$viGreeting, $username! $weatherSection $eventSection"
             }
             else -> {
-                // Generic structured sentence based on region
-                val isEastern = lang.startsWith("zh") || lang == "ja" || lang == "ko" || lang == "th" || lang == "vi"
+                // Determine if we should use Eastern or Western generic fallback
+                val lk = if (actualLang.startsWith("zh")) actualLang else actualLang.substringBefore("_")
+                val isEastern = lk == "zh_TW" || lk == "zh_HK" || lk == "zh_CN" || lk == "ja" || lk == "ko" || lk == "th" || lk == "vi"
                 if (isEastern) {
                     val weatherSection = if (condition.isNotEmpty()) "，天氣$condition，氣溫 $currentTemp" else ""
                     val eventSection = if (eventCount > 0) "，今天有 $eventCount 項行程" else "，今天沒有行程"

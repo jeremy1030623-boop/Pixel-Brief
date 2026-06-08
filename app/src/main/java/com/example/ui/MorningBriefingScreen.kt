@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -48,6 +49,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import com.example.ui.theme.Typography
 import com.example.ui.theme.*
 import java.util.*
@@ -216,44 +218,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
     var isCalendarOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-
-    var isSpeaking by remember { mutableStateOf(false) }
-    val ttsManager = remember(context) { 
-        MorningTtsManager(context) {
-            isSpeaking = false
-        }
-    }
-
-    DisposableEffect(ttsManager) {
-        onDispose {
-            ttsManager.shutdown()
-        }
-    }
-
-    val triggerToggleSpeak = remember(username, timeState, weather, events, userSettings, isSpeaking, ttsManager) {
-        {
-            if (isSpeaking) {
-                ttsManager.stop()
-                isSpeaking = false
-            } else {
-                isSpeaking = true
-                val lang = userSettings?.ttsLanguage ?: "zh_TW"
-                ttsManager.setLanguage(lang)
-
-                val speechText = LanguageTranslator.generateSpeechBrief(
-                    lang = lang,
-                    username = username,
-                    greeting = timeState.greeting,
-                    time = timeState.time,
-                    condition = weather.condition,
-                    currentTemp = weather.currentTemp.toString(),
-                    eventCount = events.size
-                )
-
-                ttsManager.speak(speechText)
-            }
-        }
-    }
 
     val isBiometricEnabled = userSettings?.isBiometricEnabled ?: false
     var isAppUnlocked by remember { mutableStateOf(false) }
@@ -533,8 +497,6 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                     isRefreshing = isRefreshing,
                                     isGoalSuggestionAdded = tasksList.any { it.text == goalSuggestion },
                                     activeTheme = activePremiumTheme,
-                                    isSpeaking = isSpeaking,
-                                    onToggleSpeak = { triggerToggleSpeak() },
                                     onSettingsClick = { isSettingsOpen = true },
                                     onAddTask = { text -> viewModel.addTask(text) },
                                     onProfileChange = { newName, newEmoji, newGradientIndex ->
@@ -974,8 +936,6 @@ fun GreetingSection(
     isRefreshing: Boolean,
     isGoalSuggestionAdded: Boolean,
     activeTheme: PremiumLayoutTheme,
-    isSpeaking: Boolean,
-    onToggleSpeak: () -> Unit,
     onSettingsClick: () -> Unit,
     onAddTask: (String) -> Unit,
     onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
@@ -1231,7 +1191,7 @@ fun GreetingSection(
                                 if (isNight) {
                                     Pair(Icons.Default.Bedtime, Color(0xFFC084FC)) // Soft lavender purple moon
                                 } else {
-                                    Pair(Icons.Default.WbSunny, Color(0xFFFBBF24)) // Radiant golden gold sun
+                                    Pair(Icons.Default.Cloud, Color(0xFF94A3B8)) // Soft cloud icon
                                 }
                             }
                             
@@ -1259,25 +1219,6 @@ fun GreetingSection(
             }
 
             Spacer(modifier = Modifier.width(8.dp))
-            
-            // TTS Read Aloud Button
-            IconButton(
-                onClick = onToggleSpeak,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = if (isSpeaking) activeTheme.accentColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
-                        shape = androidx.compose.foundation.shape.CircleShape
-                    )
-                    .testTag("tts_brief_button")
-            ) {
-                Icon(
-                    imageVector = if (isSpeaking) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                    contentDescription = if (isSpeaking) "停止語音導讀" else "語音導讀今日簡報",
-                    tint = if (isSpeaking) activeTheme.accentColor else (if (isNight) Color.White else Color(0xFF1E293B)),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
             
             // Settings Gear Button has been removed to simplify the interface
         }
@@ -1485,7 +1426,7 @@ fun DailyGoalsCard(
     GlassmorphicCard(
         modifier = modifier,
         containerColor = Color(0xFF0C1B1E),
-        borderColors = listOf(Color(0xFF10B981).copy(alpha = 0.35f), Color(0xFF059669).copy(alpha = 0.08f), Color.Transparent),
+        borderColors = listOf(Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF059669).copy(alpha = 0.05f)),
         glowColor = Color(0xFF10B981),
         isLoading = isLoading
     ) {
@@ -1832,11 +1773,11 @@ fun GlassmorphicCard(
         modifier
     }
 
-    val finalBorderColors = borderColors ?: listOf(
-        Color.White.copy(alpha = 0.16f), 
-        Color.White.copy(alpha = 0.04f),
-        Color.Transparent
-    )
+    val finalBorderColors = borderColors ?: if (containerColor.luminance() > 0.5f) {
+        listOf(Color.Black.copy(alpha = 0.1f), Color.Black.copy(alpha = 0.05f))
+    } else {
+        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.08f))
+    }
 
     Card(
         modifier = finalModifier.fillMaxWidth(),
@@ -1844,7 +1785,7 @@ fun GlassmorphicCard(
             containerColor = containerColor
         ),
         border = BorderStroke(
-            width = 1.2.dp,
+            width = 1.dp,
             brush = Brush.linearGradient(colors = finalBorderColors)
         ),
         shape = MaterialTheme.shapes.extraLarge
@@ -1881,7 +1822,7 @@ fun AgendaSection(
         modifier = Modifier.fillMaxWidth(),
         onClick = onAuthorize,
         containerColor = Color(0xFF0F1E3A),
-        borderColors = listOf(Color(0xFF60A5FA).copy(alpha = 0.32f), Color(0xFF2563EB).copy(alpha = 0.08f), Color.Transparent),
+        borderColors = listOf(Color(0xFF60A5FA).copy(alpha = 0.15f), Color(0xFF2563EB).copy(alpha = 0.05f)),
         glowColor = Color(0xFF60A5FA),
         isLoading = isRefreshing
     ) {
@@ -2038,7 +1979,7 @@ fun SyncHealthReminderCard(
     GlassmorphicCard(
         modifier = modifier,
         containerColor = Color(0xFF15122E),
-        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.32f), Color(0xFF7C3AED).copy(alpha = 0.08f), Color.Transparent),
+        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.15f), Color(0xFF7C3AED).copy(alpha = 0.05f)),
         glowColor = Color(0xFFA78BFA),
         isLoading = isLoading
     ) {
@@ -2135,7 +2076,7 @@ fun SleepCard(
     GlassmorphicCard(
         modifier = modifier,
         containerColor = Color(0xFF15122E),
-        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.32f), Color(0xFF7C3AED).copy(alpha = 0.08f), Color.Transparent),
+        borderColors = listOf(Color(0xFFA78BFA).copy(alpha = 0.15f), Color(0xFF7C3AED).copy(alpha = 0.05f)),
         glowColor = Color(0xFFA78BFA),
         isLoading = isLoading
     ) {
@@ -2282,10 +2223,10 @@ fun WeatherCard(
     }
     val weatherBorderColors = remember(condition) {
         when {
-            condition.contains("雨") || condition.contains("雷") -> listOf(Color(0xFF60A5FA).copy(alpha = 0.35f), Color(0xFF2563EB).copy(alpha = 0.08f), Color.Transparent)
-            condition.contains("雪") -> listOf(Color(0xFF93C5FD).copy(alpha = 0.35f), Color(0xFFE0F2FE).copy(alpha = 0.08f), Color.Transparent)
-            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> listOf(Color(0xFF94A3B8).copy(alpha = 0.32f), Color(0xFF475569).copy(alpha = 0.08f), Color.Transparent)
-            else -> listOf(Color(0xFFFEF08A).copy(alpha = 0.38f), Color(0xFFF59E0B).copy(alpha = 0.08f), Color.Transparent)
+            condition.contains("雨") || condition.contains("雷") -> listOf(Color(0xFF60A5FA).copy(alpha = 0.15f), Color(0xFF2563EB).copy(alpha = 0.05f))
+            condition.contains("雪") -> listOf(Color(0xFF93C5FD).copy(alpha = 0.15f), Color(0xFFE0F2FE).copy(alpha = 0.05f))
+            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> listOf(Color(0xFF94A3B8).copy(alpha = 0.12f), Color(0xFF475569).copy(alpha = 0.05f))
+            else -> listOf(Color(0xFFFEF08A).copy(alpha = 0.18f), Color(0xFFF59E0B).copy(alpha = 0.05f))
         }
     }
     val weatherGlowColor = remember(condition) {
@@ -2382,7 +2323,7 @@ fun NewsCard(
     GlassmorphicCard(
         modifier = Modifier,
         containerColor = Color(0xFF16130F),
-        borderColors = listOf(Color(0xFFF59E0B).copy(alpha = 0.32f), Color(0xFFD97706).copy(alpha = 0.08f), Color.Transparent),
+        borderColors = listOf(Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFD97706).copy(alpha = 0.05f)),
         glowColor = Color(0xFFF59E0B),
         isLoading = isLoading
     ) {
@@ -2687,16 +2628,16 @@ fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
             listOf(
                 Color(0xFFBAE6FD), // Glowing light sky blue
                 Color(0xFFE0F2FE), // Soft azure transition
-                Color(0xFFFEF3C7), // Warm golden sunrise sunbeams
-                Color(0xFFFFFBEB)  // Premium morning cream white
+                Color(0xFFF0F9FF), // Pure morning white-blue
+                Color(0xFFFFFFFF)  // Clean white
             )
         )
         else -> Brush.verticalGradient(
             listOf(
                 Color(0xFFE0F2FE), // Soft sky blue
                 Color(0xFFEFF6FF), // Airy clouds
-                Color(0xFFFEF3C7), // Gentle sunrise rays
-                Color(0xFFFFFDF5)  // Clean white sand
+                Color(0xFFF8FAFC), // Very light neutral
+                Color(0xFFFFFFFF)  // Clean white sand
             )
         )
     }
@@ -3118,148 +3059,92 @@ fun SettingsScreen(
 
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
 
-                        Text("語音簡報導讀語言 (TTS)", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                        Text(
+                            "系統與介面語言",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = AuroraSlate,
+                            fontWeight = FontWeight.Medium
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "為您專屬訂製的晨間小助手語音朗讀，提供多國常用語言與地方特色語音導讀體驗。",
+                            "調整 App 內標籤、按鈕與簡報生成的語言文本。設為「系統自動」將跟隨您的裝置語言。",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = AuroraSlate.copy(alpha = 0.7f)
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        var showLanguageDialog by remember { mutableStateOf(false) }
-                        val selectedLanguagePair = LanguageTranslator.supportedLanguages.find { it.first == editTtsLanguage }
-                        val selectedLanguageLabel = selectedLanguagePair?.second?.first ?: "繁體中文 (台灣)"
+                        var showLangDialog by remember { mutableStateOf(false) }
 
-                        Button(
-                            onClick = { showLanguageDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1E293B),
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFF334155)),
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("tts_language_picker_trigger")
+                                .height(56.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .clickable { showLangDialog = true }
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.CenterStart
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Language, contentDescription = null, tint = AuroraMint)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = selectedLanguageLabel,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = "展開語言清單", tint = Color.White)
-                            }
+                            val currentLangName = LanguageTranslator.supportedLanguages.find { it.first == editTtsLanguage }?.second?.first ?: "自動 (系統目前語言)"
+                            Text(
+                                text = currentLangName,
+                                color = Color.White
+                            )
                         }
 
-                        if (showLanguageDialog) {
-                            var searchQuery by remember { mutableStateOf("") }
-                            val filteredLanguages = LanguageTranslator.supportedLanguages.filter {
-                                it.second.first.contains(searchQuery, ignoreCase = true) ||
-                                it.first.contains(searchQuery, ignoreCase = true)
-                            }
-
-                            AlertDialog(
-                                onDismissRequest = { showLanguageDialog = false },
-                                title = {
-                                    Column {
+                        if (showLangDialog) {
+                            androidx.compose.ui.window.Dialog(onDismissRequest = { showLangDialog = false }) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 450.dp),
+                                    shape = RoundedCornerShape(24.dp),
+                                    colors = CardDefaults.cardColors(containerColor = AuroraDeepIndigo),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                ) {
+                                    Column(modifier = Modifier.padding(20.dp)) {
                                         Text(
-                                            "選擇導讀與系統語言 (共 ${LanguageTranslator.supportedLanguages.size} 種)",
-                                            style = MaterialTheme.typography.titleMedium,
+                                            "選擇偏好語言",
+                                            style = MaterialTheme.typography.headlineSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White
+                                            color = Color.White,
+                                            modifier = Modifier.padding(bottom = 16.dp)
                                         )
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        OutlinedTextField(
-                                            value = searchQuery,
-                                            onValueChange = { searchQuery = it },
-                                            placeholder = { Text("搜尋語言...", color = Color.Gray) },
-                                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .testTag("language_search_input"),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = OutlinedTextFieldDefaults.colors(
-                                                unfocusedBorderColor = Color(0xFF334155),
-                                                focusedBorderColor = AuroraMint,
-                                                unfocusedLabelColor = Color.White,
-                                                focusedLabelColor = Color.White,
-                                                focusedTextColor = Color.White,
-                                                unfocusedTextColor = Color.White
-                                            ),
-                                            singleLine = true
-                                        )
-                                    }
-                                },
-                                text = {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(300.dp)
-                                    ) {
-                                        LazyColumn(
-                                            modifier = Modifier.fillMaxSize(),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            items(filteredLanguages.size) { index ->
-                                                val (code, namePair) = filteredLanguages[index]
-                                                val isSelected = editTtsLanguage == code
-
+                                        LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                                            items(LanguageTranslator.supportedLanguages) { (id, namePair) ->
+                                                val nameStr = namePair.first
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isSelected) AuroraMidnight else Color.Transparent)
+                                                        .clip(RoundedCornerShape(12.dp))
                                                         .clickable {
-                                                            editTtsLanguage = code
-                                                            showLanguageDialog = false
+                                                            editTtsLanguage = id
+                                                            showLangDialog = false
                                                         }
-                                                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                                                        .testTag("tts_language_${code}_button"),
+                                                        .padding(vertical = 14.dp, horizontal = 8.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     RadioButton(
-                                                        selected = isSelected,
-                                                        onClick = {
-                                                            editTtsLanguage = code
-                                                            showLanguageDialog = false
-                                                        },
-                                                        colors = RadioButtonDefaults.colors(
-                                                            selectedColor = AuroraMint,
-                                                            unselectedColor = Color(0xFF64748B)
-                                                        )
+                                                        selected = editTtsLanguage == id,
+                                                        onClick = null,
+                                                        colors = RadioButtonDefaults.colors(selectedColor = AuroraMint)
                                                     )
-                                                    Spacer(modifier = Modifier.width(10.dp))
-                                                    Text(
-                                                        text = namePair.first,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                        color = if (isSelected) AuroraMint else Color.White
-                                                    )
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Text(nameStr, color = Color.White, style = MaterialTheme.typography.bodyLarge)
                                                 }
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                            onClick = { showLangDialog = false },
+                                            modifier = Modifier.align(Alignment.End),
+                                            colors = ButtonDefaults.buttonColors(containerColor = AuroraMint)
+                                        ) {
+                                            Text("取消", color = AuroraMidnight, fontWeight = FontWeight.Bold)
+                                        }
                                     }
-                                },
-                                confirmButton = {
-                                    TextButton(onClick = { showLanguageDialog = false }) {
-                                        Text("關閉", color = AuroraMint, fontWeight = FontWeight.Bold)
-                                    }
-                                },
-                                containerColor = AuroraDeepIndigo,
-                                shape = RoundedCornerShape(16.dp)
-                            )
+                                }
+                            }
                         }
                     }
                 }
@@ -3446,130 +3331,10 @@ fun WeatherAtmosphereOverlay(
                         strokeWidth = stroke
                     )
                 }
-                
-                // Draw dynamic splash ripples on simulated surface glass
-                val splashPoints = listOf(
-                    androidx.compose.ui.geometry.Offset(width * 0.25f, height * 0.45f),
-                    androidx.compose.ui.geometry.Offset(width * 0.75f, height * 0.25f),
-                    androidx.compose.ui.geometry.Offset(width * 0.5f, height * 0.75f)
-                )
-                
-                splashPoints.forEachIndexed { index, point ->
-                    val progress = (rippleScale + index * 0.33f) % 1f
-                    val alpha = (1f - progress) * 0.12f
-                    val radius = progress * 50.dp.toPx()
-                    
-                    drawCircle(
-                        color = Color(0xFFC084FC).copy(alpha = alpha),
-                        radius = radius,
-                        center = point,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
-                    )
-                }
             }
         }
         "晴朗" -> {
-            // Elegant slow-rotating golden sun halo on the left side with scattered lens flare flecks
-            val sunRotation by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(35000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "sun_rotation"
-            )
-
-            val sunGlow by infiniteTransition.animateFloat(
-                initialValue = 0.15f,
-                targetValue = 0.30f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(5000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "sunny_glow"
-            )
-
-            val flarePulse by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(7000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "flare_pulse"
-            )
-            
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val width = size.width
-                val height = size.height
-                if (width <= 0 || height <= 0) return@Canvas
-                
-                val centerLeftX = -30.dp.toPx()
-                val centerLeftY = height * 0.28f
-                val sunCenter = androidx.compose.ui.geometry.Offset(centerLeftX, centerLeftY)
-
-                // 1. Draw 8 rotating golden solar halo rays/bursts
-                rotate(degrees = sunRotation, pivot = sunCenter) {
-                    val rayCount = 8
-                    val maxRayLength = (width * 0.75f).coerceAtLeast(400.dp.toPx())
-                    for (r in 0 until rayCount) {
-                        val angleRad = (r * (2f * 3.14159265f / rayCount))
-                        val endX = centerLeftX + kotlin.math.cos(angleRad) * maxRayLength
-                        val endY = centerLeftY + kotlin.math.sin(angleRad) * maxRayLength
-                        
-                        drawLine(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFFFEF08A).copy(alpha = sunGlow * 0.35f),
-                                    Color(0xFFFDE047).copy(alpha = sunGlow * 0.08f),
-                                    Color.Transparent
-                                ),
-                                start = sunCenter,
-                                end = androidx.compose.ui.geometry.Offset(endX, endY)
-                            ),
-                            start = sunCenter,
-                            end = androidx.compose.ui.geometry.Offset(endX, endY),
-                            strokeWidth = 35.dp.toPx()
-                        )
-                    }
-                }
-
-                // 2. Draw soft layered golden radial gradients as core/halo on the left
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFFEF3C7).copy(alpha = sunGlow * 1.2f),
-                            Color(0xFFFDE047).copy(alpha = sunGlow * 0.6f),
-                            Color(0xFFFEF08A).copy(alpha = sunGlow * 0.25f),
-                            Color.Transparent
-                        ),
-                        center = sunCenter,
-                        radius = width * 0.8f
-                    ),
-                    radius = width * 0.8f,
-                    center = sunCenter
-                )
-
-                // 3. Draw scattered golden light flecks (lens flares) that pulse gently
-                val flareSpots = listOf(
-                    Pair(androidx.compose.ui.geometry.Offset(width * 0.25f, height * 0.38f), 18.dp),
-                    Pair(androidx.compose.ui.geometry.Offset(width * 0.42f, height * 0.46f), 32.dp),
-                    Pair(androidx.compose.ui.geometry.Offset(width * 0.52f, height * 0.50f), 10.dp),
-                    Pair(androidx.compose.ui.geometry.Offset(width * 0.68f, height * 0.58f), 48.dp),
-                    Pair(androidx.compose.ui.geometry.Offset(width * 0.82f, height * 0.66f), 24.dp)
-                )
-                
-                flareSpots.forEachIndexed { index, (pos, baseRadius) ->
-                    val p = (flarePulse + index * 0.2f) % 1f
-                    val alpha = (1f - p) * 0.16f * sunGlow
-                    drawCircle(
-                        color = Color(0xFFFEF08A).copy(alpha = alpha),
-                        radius = baseRadius.toPx() * (0.7f + p * 0.6f),
-                        center = pos
-                    )
-                }
-            }
+            // Sun effect removed per user request
         }
         "陰天", "多雲", "多雲時晴", "起霧" -> {
             // Elegant horizontal drifting cloud curtains / mist bands creating quiet morning atmosphere

@@ -47,7 +47,8 @@ class MorningTtsManager(
     fun setLanguage(langCode: String) {
         currentLangCode = langCode
         if (isReady) {
-            val locale = when (langCode) {
+            val actualCode = if (langCode == "system_default") Locale.getDefault().toString() else langCode
+            val locale = when (actualCode) {
                 "zh_TW" -> Locale.TRADITIONAL_CHINESE
                 "zh_CN" -> Locale.SIMPLIFIED_CHINESE
                 "en" -> Locale.US
@@ -84,14 +85,14 @@ class MorningTtsManager(
                 "sk" -> Locale("sk", "SK")
                 else -> {
                     try {
-                        val parts = langCode.split("_")
+                        val parts = actualCode.split("_")
                         if (parts.size == 2) {
                             Locale(parts[0], parts[1])
                         } else {
-                            Locale(langCode)
+                            Locale(actualCode)
                         }
                     } catch (e: Exception) {
-                        Locale.TRADITIONAL_CHINESE
+                        Locale.getDefault()
                     }
                 }
             }
