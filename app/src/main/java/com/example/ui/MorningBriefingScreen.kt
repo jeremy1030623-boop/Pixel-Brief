@@ -1330,7 +1330,7 @@ fun GoalSuggestionCard(
     val systemPrimary = MaterialTheme.colorScheme.primary
     val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
-    // Setup an infinite transition for subtle, beautiful interactive animation (pulsing glow/size of the lightbulb)
+    // Setup an infinite transition for subtle, beautiful interactive animation
     val infiniteTransition = rememberInfiniteTransition(label = "goal_icon_glow")
     val iconScale by infiniteTransition.animateFloat(
         initialValue = 0.95f,
@@ -1351,14 +1351,10 @@ fun GoalSuggestionCard(
         label = "shadowAlpha"
     )
 
-    // Layout colors based on isNight
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = themed.container),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    GlassmorphicCard(
+        modifier = Modifier,
+        containerColor = themed.container,
+        glowColor = themed.glow
     ) {
         Column(
             modifier = Modifier
@@ -1385,7 +1381,7 @@ fun GoalSuggestionCard(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         drawCircle(
-                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else systemPrimary.copy(alpha = iconShadowAlpha * 0.4f),
+                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else systemPrimary?.copy(alpha = iconShadowAlpha * 0.4f) ?: AuroraMint.copy(alpha = iconShadowAlpha),
                             radius = size.width * 0.42f * iconScale
                         )
                     }
@@ -1927,6 +1923,102 @@ fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean, systemPrimary
 }
 
 @Composable
+fun MonthlyCalendarWidget(
+    activeTheme: PremiumLayoutTheme,
+    isNight: Boolean
+) {
+    val calendar = Calendar.getInstance()
+    val currentDay = calendar.get(Calendar.DAY_OF_MONTH)
+    
+    val totalDays = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val displayCalendar = (Calendar.getInstance().clone() as Calendar).apply {
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+    val firstDayOfWeek = displayCalendar.get(Calendar.DAY_OF_WEEK) - 1
+    
+    val daysList = mutableListOf<Int?>()
+    repeat(firstDayOfWeek) { daysList.add(null) }
+    for (i in 1..totalDays) { daysList.add(i) }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val monthName = SimpleDateFormat("MMMM yyyy", Locale.TAIWAN).format(calendar.time)
+        Text(
+            text = monthName,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+            color = if (isNight) Color.White.copy(alpha = 0.8f) else Color(0xFF1E293B),
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            listOf("日", "一", "二", "三", "四", "五", "六").forEach { day ->
+                Text(
+                    text = day,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        val weeks = daysList.chunked(7)
+        weeks.forEach { week ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                week.forEach { day ->
+                    if (day == null) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    } else {
+                        val isToday = day == currentDay
+                        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .padding(2.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isToday) activeTheme.accentColor.copy(alpha = 0.25f)
+                                    else Color.Transparent
+                                )
+                                .clickable { 
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = day.toString(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Normal
+                                ),
+                                color = if (isToday) activeTheme.accentColor else (if (isNight) Color.White else Color.Black).copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+                if (week.size < 7) {
+                    repeat(7 - week.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun AgendaSection(
     events: List<com.example.data.CalendarEvent>,
     weather: WeatherInfo,
@@ -1942,18 +2034,44 @@ fun AgendaSection(
         modifier = Modifier.fillMaxWidth(),
         onClick = onAuthorize,
         containerColor = themed.container,
-        borderColors = themed.border,
         glowColor = themed.glow,
         isLoading = isRefreshing
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                "今日行程",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "今日行程與行事曆",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .background(themed.accent.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        "${events.size} 筆排程",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = themed.accent
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Integrated Month Grid
+            MonthlyCalendarWidget(activeTheme = activeTheme, isNight = isNight)
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (events.isEmpty()) {
                 Text(
                     "今天沒有行程",
