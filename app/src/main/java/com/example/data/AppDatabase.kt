@@ -101,11 +101,31 @@ interface SleepDataDao {
     suspend fun insertSleepData(data: SleepData)
 }
 
-@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class], version = 12, exportSchema = false)
+@Entity(tableName = "ai_cache")
+data class AiCache(
+    @PrimaryKey val promptHash: String,
+    val response: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface AiCacheDao {
+    @Query("SELECT * FROM ai_cache WHERE promptHash = :hash")
+    suspend fun getCachedResponse(hash: String): AiCache?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveToCache(cache: AiCache)
+
+    @Query("DELETE FROM ai_cache WHERE timestamp < :expiry")
+    suspend fun clearExpired(expiry: Long)
+}
+
+@Database(entities = [UserSettings::class, TaskItem::class, SleepData::class, AiCache::class], version = 13, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun taskItemDao(): TaskItemDao
     abstract fun sleepDataDao(): SleepDataDao
+    abstract fun aiCacheDao(): AiCacheDao
 
     companion object {
         @Volatile

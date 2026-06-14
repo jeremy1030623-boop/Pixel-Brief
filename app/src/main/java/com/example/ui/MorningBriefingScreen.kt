@@ -38,6 +38,7 @@ import android.appwidget.AppWidgetHostView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -79,6 +80,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 
 enum class PremiumLayoutTheme(
     val themeName: String,
@@ -95,7 +101,7 @@ enum class PremiumLayoutTheme(
         "深邃極夜彩螢綠",
         listOf(Color(0xFF060B18), Color(0xFF0F1833), Color(0xFF1E1B4B), Color(0xFF03050C)),
         Color(0xFF111728),
-        listOf(Color(0xFF34D399).copy(alpha = 0.25f), Color(0xFF818CF8).copy(alpha = 0.08f), Color.Transparent),
+        listOf(Color(0xFF34D399), Color(0xFF818CF8), Color.Transparent),
         Color(0xFF34D399),
         Color(0xFF818CF8),
         "🌌"
@@ -105,7 +111,7 @@ enum class PremiumLayoutTheme(
         "皇家香檳熔岩金",
         listOf(Color(0xFF1B1105), Color(0xFF2C1E0C), Color(0xFF201305), Color(0xFF0E0802)),
         Color(0xFF251A0D),
-        listOf(Color(0xFFF59E0B).copy(alpha = 0.3f), Color(0xFFFCD34D).copy(alpha = 0.08f), Color.Transparent),
+        listOf(Color(0xFFF59E0B), Color(0xFFFCD34D), Color.Transparent),
         Color(0xFFF59E0B),
         Color(0xFFFCD34D),
         "👑"
@@ -115,7 +121,7 @@ enum class PremiumLayoutTheme(
         "冰川極光晨曦綠",
         listOf(Color(0xFF021B1B), Color(0xFF082D2D), Color(0xFF0A1E29), Color(0xFF02070A)),
         Color(0xFF0E2226),
-        listOf(Color(0xFF10B981).copy(alpha = 0.28f), Color(0xFF06B6D4).copy(alpha = 0.08f), Color.Transparent),
+        listOf(Color(0xFF10B981), Color(0xFF06B6D4), Color.Transparent),
         Color(0xFF10B981),
         Color(0xFF06B6D4),
         "❄️"
@@ -125,7 +131,7 @@ enum class PremiumLayoutTheme(
         "霓虹粉紫迷幻境",
         listOf(Color(0xFF0F051D), Color(0xFF1C093A), Color(0xFF0C0315), Color(0xFF05010B)),
         Color(0xFF1D0E32),
-        listOf(Color(0xFFEC4899).copy(alpha = 0.3f), Color(0xFF8B5CF6).copy(alpha = 0.08f), Color.Transparent),
+        listOf(Color(0xFFEC4899), Color(0xFF8B5CF6), Color.Transparent),
         Color(0xFFEC4899),
         Color(0xFF8B5CF6),
         "🔮"
@@ -144,7 +150,11 @@ val APPWIDGET_HOST_ID = 1024
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
+fun MorningBriefingScreen(
+    viewModel: MorningViewModel = viewModel(),
+    briefingViewModel: BriefingViewModel = viewModel()
+) {
+    val briefingState by briefingViewModel.briefingState.collectAsState()
     val weather by viewModel.weatherInfo.collectAsState()
     val username by viewModel.username.collectAsState()
     val timeState by viewModel.timeState.collectAsState()
@@ -403,6 +413,13 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(sleepInfo, isSleepSynced) {
+        if (isSleepSynced && briefingState is BriefingState.Initial) {
+            val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請分析以下昨晚到今天的健康數據，並提供一段字數約 80-120 字的『深度健康生活綜合指導文字簡報』，包含具體的身體狀態評估、今日飲食與運動之科學建議，以及晨間開機的精神小叮嚀。數據：睡眠 ${sleepInfo.hours} 小時 (打鼾 ${sleepInfo.snoringMinutes} 分鐘，咳嗽 ${sleepInfo.coughCount} 次)。"
+            briefingViewModel.fetchBriefing(prompt)
+        }
+    }
+
     LaunchedEffect(visible, isRefreshing) {
         if (visible) {
             if (isRefreshing) {
@@ -482,9 +499,42 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
             }
         }
 
-        Crossfade(
+        AnimatedContent(
             targetState = screenState,
-            label = "ScreenContent"
+            transitionSpec = {
+                val springSpec = spring<Float>(
+                    dampingRatio = 0.82f, // Material 3 expressive spring damping
+                    stiffness = 380f      // Responsive frequency
+                )
+                val slideSpring = spring<IntOffset>(
+                    dampingRatio = 0.82f,
+                    stiffness = 380f
+                )
+                val scaleSpec = spring<Float>(
+                    dampingRatio = 0.82f,
+                    stiffness = 380f
+                )
+                
+                if (targetState is ScreenState.Home) {
+                    // Back navigation: slide right, scale down (expressive exit flow)
+                    (fadeIn(animationSpec = springSpec) + 
+                     slideInHorizontally(animationSpec = slideSpring) { -it / 3 } + 
+                     scaleIn(initialScale = 1.05f, animationSpec = scaleSpec)) togetherWith 
+                    (fadeOut(animationSpec = springSpec) + 
+                     slideOutHorizontally(animationSpec = slideSpring) { it / 3 } + 
+                     scaleOut(targetScale = 0.95f, animationSpec = scaleSpec))
+                } else {
+                    // Forward navigation: slide left, scale up (expressive enter flow)
+                    (fadeIn(animationSpec = springSpec) + 
+                     slideInHorizontally(animationSpec = slideSpring) { it / 3 } + 
+                     scaleIn(initialScale = 0.95f, animationSpec = scaleSpec)) togetherWith 
+                    (fadeOut(animationSpec = springSpec) + 
+                     slideOutHorizontally(animationSpec = slideSpring) { -it / 3 } + 
+                     scaleOut(targetScale = 1.05f, animationSpec = scaleSpec))
+                }
+            },
+            label = "ScreenContent",
+            modifier = Modifier.fillMaxSize()
         ) { state ->
             when (state) {
                 is ScreenState.CalendarViewer -> {
@@ -531,8 +581,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             
                             AnimatedVisibility(
                                 visible = visible,
-                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) + 
-                                        slideInVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = 300f)) { -20 }
+                                enter = fadeIn(animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f)) + 
+                                        slideInVertically(animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f)) { 40 } +
+                                        scaleIn(initialScale = 0.92f, animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f))
                             ) {
                                 GreetingSection(
                                     username = username,
@@ -569,8 +620,9 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                             
             AnimatedVisibility(
                 visible = agendaVisible,
-                enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
-                        slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
+                enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) + 
+                        slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) { 60 } +
+                        scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f))
             ) {
                 AgendaSection(events, weather, isNight, activePremiumTheme, isRefreshing) {
                                     if (calendarPermissionGranted.value) {
@@ -595,6 +647,7 @@ fun MorningBriefingScreen(viewModel: MorningViewModel = viewModel()) {
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
                                 displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
                                 newsMode = userSettings?.newsMode ?: "local",
+                                briefingState = briefingState,
                                 isNight = isNight,
                                 activeTheme = activePremiumTheme,
                                 healthVisible = healthVisible,
@@ -639,7 +692,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
+            .background(MaterialTheme.colorScheme.surface)
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -648,13 +701,13 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
                 item.title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
-                color = if (isNight) Color.White else Color(0xFF0F172A)
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 item.summary,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (isNight) Color(0xFFF1F5F9) else Color(0xFF334155)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
             val isUrlValid = remember(item.url) {
@@ -689,7 +742,7 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
         
         FloatingActionButton(
             onClick = onBack,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp).expressiveBounce(),
             containerColor = MaterialTheme.colorScheme.tertiary,
             contentColor = MaterialTheme.colorScheme.onTertiary,
             shape = MaterialTheme.shapes.large
@@ -787,7 +840,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isNight) Color(0xFF0F172A) else Color(0xFFF8FAFC))
+            .background(MaterialTheme.colorScheme.surface)
             .padding(24.dp)
             .statusBarsPadding()
     ) {
@@ -799,7 +852,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = "天氣小工具",
-                    tint = if (isNight) AuroraMint else Color(0xFF0F172A),
+                    tint = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -807,7 +860,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                     "天氣小工具說明",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Black,
-                    color = if (isNight) Color.White else Color(0xFF0F172A)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
             
@@ -815,12 +868,12 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
             Text(
                 "目前定位城市：${weather.locationName} (${weather.condition})",
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 "今日氣溫：${weather.minTemp}°C ~ ${weather.maxTemp}°C  (體感 ${weather.apparentTemp}°C)",
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (isNight) Color(0xFF94A3B8) else Color(0xFF64748B)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             
             Spacer(modifier = Modifier.height(28.dp))
@@ -830,7 +883,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 "• 晨光天氣概覽",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+                color = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Card(
@@ -838,7 +891,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -847,7 +900,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                         weather.description,
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 26.sp,
-                        color = if (isNight) Color.White else Color(0xFF334155)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -859,7 +912,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 "• 氣溫趨勢 (未來 12 小時)",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+                color = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Card(
@@ -867,7 +920,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -888,7 +941,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 "• 今日關注",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+                color = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Card(
@@ -896,7 +949,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -905,7 +958,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                         Text(
                             warning,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (isNight) Color.White else Color(0xFF334155)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         if (index < warnings.size - 1) {
                             Spacer(modifier = Modifier.height(12.dp))
@@ -921,7 +974,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                 "· 今日穿搭",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (isNight) AuroraMint else Color(0xFF0F172A)
+                color = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Card(
@@ -929,7 +982,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isNight) Color(0xFF151B26) else Color(0xFFF1F5F9)
+                    containerColor = if (isNight) Color(0xFF151B26) else MaterialTheme.colorScheme.surfaceVariant
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -938,7 +991,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
                         Text(
                             recommendation,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (isNight) Color.White else Color(0xFF334155)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         if (index < clothingRecommend.size - 1) {
                             Spacer(modifier = Modifier.height(12.dp))
@@ -952,7 +1005,7 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
         
         FloatingActionButton(
             onClick = onBack,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp).testTag("weather_detail_back_button"),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp).testTag("weather_detail_back_button").expressiveBounce(),
             containerColor = MaterialTheme.colorScheme.tertiary,
             contentColor = MaterialTheme.colorScheme.onTertiary,
             shape = MaterialTheme.shapes.large
@@ -1079,7 +1132,6 @@ fun GreetingSection(
                         textSize = 36.sp,
                         modifier = Modifier
                             .padding(bottom = 16.dp)
-                            .border(2.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(100))
                     )
                     
                     // Name textfield
@@ -1129,11 +1181,6 @@ fun GreetingSection(
                                                 if (isSelected) Color.White.copy(alpha = 0.25f)
                                                 else Color.White.copy(alpha = 0.05f)
                                             )
-                                            .border(
-                                                width = 1.5.dp,
-                                                color = if (isSelected) AuroraMint else Color.Transparent,
-                                                shape = RoundedCornerShape(8.dp)
-                                            )
                                             .clickable { selectedEmoji = emoji }
                                             .padding(4.dp),
                                         contentAlignment = Alignment.Center
@@ -1168,11 +1215,6 @@ fun GreetingSection(
                                     .size(36.dp)
                                     .clip(RoundedCornerShape(100))
                                     .background(Brush.linearGradient(colors))
-                                    .border(
-                                        width = 2.dp,
-                                        color = if (isSelected) Color.White else Color.Transparent,
-                                        shape = RoundedCornerShape(100)
-                                    )
                                     .clickable { selectedGradientIndex = index }
                             ) {
                                 if (isSelected) {
@@ -1250,14 +1292,14 @@ fun GreetingSection(
                         Text(
                             text = localizedGreeting,
                             style = MaterialTheme.typography.headlineSmall,
-                            color = if (isNight) Color.White else Color(0xFF1E293B),
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "編輯姓名",
-                            tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF1E293B).copy(alpha = 0.6f),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -1283,8 +1325,8 @@ fun GoalSuggestionCard(
     isTaskAdded: Boolean,
     onAddTask: (String) -> Unit
 ) {
-    if (goalSuggestion.isBlank()) return
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     // Setup an infinite transition for subtle, beautiful interactive animation (pulsing glow/size of the lightbulb)
     val infiniteTransition = rememberInfiniteTransition(label = "goal_icon_glow")
@@ -1314,7 +1356,6 @@ fun GoalSuggestionCard(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = themed.container),
-        border = BorderStroke(1.5.dp, Brush.linearGradient(themed.border)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -1334,7 +1375,7 @@ fun GoalSuggestionCard(
                         .clip(RoundedCornerShape(10.dp))
                         .background(
                             if (isNight) Color(0xFF065F46).copy(alpha = 0.35f)
-                            else Color(0xFFD1FAE5)
+                            else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1342,14 +1383,14 @@ fun GoalSuggestionCard(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         drawCircle(
-                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else Color(0xFF10B981).copy(alpha = iconShadowAlpha * 0.4f),
+                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else systemPrimary.copy(alpha = iconShadowAlpha * 0.4f),
                             radius = size.width * 0.42f * iconScale
                         )
                     }
                     Icon(
                         imageVector = Icons.Default.Lightbulb,
                         contentDescription = "💡",
-                        tint = if (isNight) AuroraMint else Color(0xFF047857),
+                        tint = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1363,7 +1404,7 @@ fun GoalSuggestionCard(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.5.sp
                         ),
-                        color = if (isNight) AuroraMint.copy(alpha = 0.8f) else Color(0xFF047857)
+                        color = if (isNight) AuroraMint.copy(alpha = 0.8f) else MaterialTheme.colorScheme.primary
                     )
                     Text(
                         text = "💡 今日智慧生活目標",
@@ -1371,7 +1412,7 @@ fun GoalSuggestionCard(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.5.sp
                         ),
-                        color = if (isNight) Color.White else Color(0xFF1E293B)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1385,7 +1426,7 @@ fun GoalSuggestionCard(
                     lineHeight = 26.sp,
                     fontWeight = FontWeight.Medium
                 ),
-                color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.9f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -1446,7 +1487,8 @@ fun DailyGoalsCard(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
     val totalCount = tasks.size
     val completedCount = tasks.count { it.isCompleted }
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
@@ -1498,7 +1540,7 @@ fun DailyGoalsCard(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         ),
-                        color = if (isNight) Color.White else Color(0xFF1E293B)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     
                     if (totalCount > 0) {
@@ -1510,7 +1552,7 @@ fun DailyGoalsCard(
                         Text(
                             text = progressMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -1528,7 +1570,7 @@ fun DailyGoalsCard(
                     Text(
                         text = "完成進度",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = (if (isNight) Color.White else Color(0xFF1D2939)).copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     Text(
                         text = "${(progress * 100).toInt()}%",
@@ -1574,12 +1616,12 @@ fun DailyGoalsCard(
                         Text(
                             text = "今日尚未建立生活目標",
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = if (isNight) Color.White else Color(0xFF1E293B)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = "可接受上方的「今日智慧生活目標」\n或在下方新增自訂生活目標！🌟",
                             style = MaterialTheme.typography.bodySmall,
-                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -1726,7 +1768,7 @@ fun TimeGreetingText(
         Text(
             text = mainBrief,
             style = MaterialTheme.typography.titleLarge.copy(lineHeight = 34.sp),
-            color = if (isNight) Color.White else Color(0xFF1E293B),
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Start,
             modifier = Modifier
                 .fillMaxWidth()
@@ -1804,7 +1846,7 @@ fun GlassmorphicCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val finalModifier = if (onClick != null && !isLoading) {
-        modifier.clickable { onClick() }
+        modifier.expressiveBounceClickable { onClick() }
     } else {
         modifier
     }
@@ -1819,10 +1861,6 @@ fun GlassmorphicCard(
         modifier = finalModifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = containerColor
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            brush = Brush.linearGradient(colors = finalBorderColors)
         ),
         shape = MaterialTheme.shapes.extraLarge
     ) {
@@ -1852,10 +1890,10 @@ data class WeatherThemedColors(
     val accent: Color
 )
 
-fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean): WeatherThemedColors {
+fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean, systemPrimary: Color? = null): WeatherThemedColors {
     val solid = getWeatherSolidColor(weather, isNight)
     
-    val accent = if (isNight) {
+    var accent = if (isNight) {
         when {
             weather.condition.contains("雨") || weather.condition.contains("雷") -> Color(0xFF60A5FA)
             weather.condition.contains("雪") -> Color(0xFF93C5FD)
@@ -1873,8 +1911,13 @@ fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean): WeatherTheme
         }
     }
 
+    // Blend with system primary color if provided (Material You support)
+    if (systemPrimary != null) {
+        accent = lerp(accent, systemPrimary, 0.4f)
+    }
+
     return WeatherThemedColors(
-        container = if (isNight) solid.copy(alpha = 0.85f) else solid.copy(alpha = 0.95f),
+        container = solid,
         border = listOf(accent.copy(alpha = 0.2f), accent.copy(alpha = 0.05f)),
         glow = accent.copy(alpha = if (isNight) 0.35f else 0.15f),
         accent = accent
@@ -1890,7 +1933,8 @@ fun AgendaSection(
     isRefreshing: Boolean = false,
     onAuthorize: () -> Unit
 ) {
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
     
     GlassmorphicCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1901,10 +1945,19 @@ fun AgendaSection(
         isLoading = isRefreshing
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("今日行程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
+            Text(
+                "今日行程",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             Spacer(modifier = Modifier.height(12.dp))
             if (events.isEmpty()) {
-                Text("今天沒有行程", color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "今天沒有行程",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
             } else {
                 events.forEach { event ->
                     Row(
@@ -1927,19 +1980,29 @@ fun AgendaSection(
                             }
                         }
                         Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = event.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isNight) Color.White else Color(0xFF1E293B)
-                            )
-                            Text(
-                                text = "在 ${getTimeString(event.startTime)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f)
-                            )
+                    Column {
+                        Text(
+                            text = event.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "在 ${getTimeString(event.startTime)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                        )
+                        if (event.description.isNotBlank()) {
+                           Spacer(modifier = Modifier.height(4.dp))
+                           Text(
+                               text = event.description,
+                               style = MaterialTheme.typography.bodySmall,
+                               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                               maxLines = 2,
+                               overflow = TextOverflow.Ellipsis
+                           )
                         }
+                    }
                     }
                 }
             }
@@ -1960,6 +2023,7 @@ fun WidgetGrid(
     isCoughColorAlertEnabled: Boolean,
     displayedNewsCount: Int,
     newsMode: String,
+    briefingState: BriefingState,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     healthVisible: Boolean,
@@ -1979,13 +2043,15 @@ fun WidgetGrid(
     val widgetIdList = remember(addedWidgetIds) {
         addedWidgetIds.split(",").filter { it.isNotBlank() }.mapNotNull { it.toIntOrNull() }
     }
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AnimatedVisibility(
             visible = healthVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
-                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) { 60 } +
+                    scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f))
         ) {
             if (isSleepSynced) {
                 SleepCard(
@@ -1994,6 +2060,7 @@ fun WidgetGrid(
                     lastSyncTime = lastSyncTime,
                     isNight = isNight,
                     activeTheme = activeTheme,
+                    briefingState = briefingState,
                     isLoading = isLoading,
                     onReSync = onSync
                 )
@@ -2010,8 +2077,9 @@ fun WidgetGrid(
 
         AnimatedVisibility(
             visible = weatherVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
-                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) { 60 } +
+                    scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f))
         ) {
             WeatherCard(
                 weather = weather,
@@ -2024,8 +2092,9 @@ fun WidgetGrid(
 
         AnimatedVisibility(
             visible = newsVisible,
-            enter = fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) + 
-                    slideInVertically(animationSpec = spring(dampingRatio = 0.75f, stiffness = 200f)) { 40 }
+            enter = fadeIn(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) + 
+                    slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) { 60 } +
+                    scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f))
         ) {
             NewsCard(
                 news = news,
@@ -2050,6 +2119,7 @@ fun WidgetGrid(
             )
         }
 
+/*
         // Add Widget Button
         GlassmorphicCard(
             modifier = Modifier.fillMaxWidth().testTag("add_widget_button"),
@@ -2074,6 +2144,7 @@ fun WidgetGrid(
                 )
             }
         }
+        */
     }
 }
 
@@ -2089,7 +2160,8 @@ fun SyncHealthReminderCard(
     var isSyncing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     GlassmorphicCard(
         modifier = modifier,
@@ -2124,12 +2196,12 @@ fun SyncHealthReminderCard(
                         "健康資料尚未同步",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (isNight) Color.White else Color(0xFF1E293B)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         "同步 Google Fit 與睡眠資訊以提供專屬今日簡報",
                         style = MaterialTheme.typography.bodySmall,
-                        color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.9f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                     )
                 }
             }
@@ -2180,6 +2252,7 @@ fun SleepCard(
     lastSyncTime: String,
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
+    briefingState: BriefingState = BriefingState.Initial,
     isLoading: Boolean = false,
     onReSync: () -> Unit,
     modifier: Modifier = Modifier
@@ -2187,7 +2260,8 @@ fun SleepCard(
     var isSyncing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     GlassmorphicCard(
         modifier = modifier,
@@ -2223,12 +2297,12 @@ fun SleepCard(
                             "今日睡眠品質",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (isNight) Color.White else Color(0xFF1E293B)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             "上次同步: $lastSyncTime",
                             style = MaterialTheme.typography.bodySmall,
-                            color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -2250,14 +2324,14 @@ fun SleepCard(
                         if (isSyncing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = if (isNight) Color.White else Color(0xFF1E293B),
+                                color = MaterialTheme.colorScheme.onSurface,
                                 strokeWidth = 1.5.dp
                             )
                         } else {
                             Icon(
                                 Icons.Default.Sync,
                                 contentDescription = "Re-sync",
-                                tint = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -2298,11 +2372,59 @@ fun SleepCard(
                 color = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            Text(
-                "您的健康狀況分析與建議將顯示於此。",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
-            )
+            
+            AnimatedContent(
+                targetState = briefingState,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(500, easing = LinearOutSlowInEasing)) + 
+                     scaleIn(initialScale = 0.92f, animationSpec = tween(500, easing = LinearOutSlowInEasing)))
+                        .togetherWith(fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 0.92f, animationSpec = tween(300)))
+                },
+                label = "briefing_status_transition"
+            ) { state ->
+                when (state) {
+                    is BriefingState.Loading -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = themed.accent.copy(alpha = 0.7f),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "AI 正在分析您的健康趨勢...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                    is BriefingState.Success -> {
+                        Text(
+                            state.content,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            lineHeight = 18.sp
+                        )
+                    }
+                    is BriefingState.Error -> {
+                        Text(
+                            "分析失敗: ${state.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                        )
+                    }
+                    else -> {
+                        Text(
+                            "等待同步數據以生成分析...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2322,8 +2444,8 @@ fun SleepMetricItem(
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f))
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
     }
 }
 
@@ -2336,7 +2458,8 @@ fun WeatherCard(
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     GlassmorphicCard(
         modifier = modifier,
@@ -2373,14 +2496,14 @@ fun WeatherCard(
                         Text(
                             text = weather.locationName,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = if (isNight) Color.White else Color(0xFF1E293B)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         // Smart positioning tag
                         Box(
                             modifier = Modifier
                                 .background(
-                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.08f),
+                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
                                     shape = RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
@@ -2388,13 +2511,22 @@ fun WeatherCard(
                             Text(
                                 text = if (weather.isGpsLocated) "GPS 實時" else "預設城市",
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                                color = if (weather.isGpsLocated) AuroraMint else (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f)
+                                color = if (weather.isGpsLocated) AuroraMint else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(weather.condition, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (isNight) Color.White else Color(0xFF1E293B))
-                    Text("最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}", style = MaterialTheme.typography.bodySmall, color = (if (isNight) Color.White else Color(0xFF1E293B)).copy(alpha = 0.85f))
+                    Text(
+                        weather.condition,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                    )
                 }
             }
             
@@ -2402,7 +2534,7 @@ fun WeatherCard(
                 text = formatTemperature(weather.currentTemp, weatherUnit),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
-                color = if (isNight) Color.White else Color(0xFF1E293B)
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -2420,7 +2552,8 @@ fun NewsCard(
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     GlassmorphicCard(
         modifier = Modifier,
@@ -2439,7 +2572,7 @@ fun NewsCard(
                     "今日重點新聞",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isNight) Color.White else Color(0xFF1E293B),
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
                 
@@ -2456,7 +2589,7 @@ fun NewsCard(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (active) (if (isNight) Color.White else Color.Black).copy(alpha = 0.15f) else Color.Transparent,
+                                    if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f) else Color.Transparent,
                                     RoundedCornerShape(50)
                                 )
                                 .clickable { if (!active) onNewsModeChange(code) }
@@ -2467,7 +2600,7 @@ fun NewsCard(
                                 text = label,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
-                                color = if (active) (if (isNight) Color.White else Color.Black) else (if (isNight) Color.White else Color.Black).copy(alpha = 0.5f)
+                                color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -2479,7 +2612,7 @@ fun NewsCard(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), color = themed.accent, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.7f))
+                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                     }
                 }
             } else {
@@ -2495,18 +2628,18 @@ fun NewsCard(
                             text = item.title,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (isNight) Color.White else Color(0xFF334155)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
                             style = MaterialTheme.typography.labelSmall,
-                            color = (if (isNight) Color.White else Color(0xFF334155)).copy(alpha = 0.5f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             fontWeight = FontWeight.Medium
                         )
                     }
                     if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }
@@ -3201,8 +3334,7 @@ fun SettingsScreen(
                                         .fillMaxWidth()
                                         .heightIn(max = 450.dp),
                                     shape = RoundedCornerShape(24.dp),
-                                    colors = CardDefaults.cardColors(containerColor = AuroraDeepIndigo),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                                    colors = CardDefaults.cardColors(containerColor = AuroraDeepIndigo)
                                 ) {
                                     Column(modifier = Modifier.padding(20.dp)) {
                                         Text(
@@ -3751,21 +3883,6 @@ fun SecurityLockScreen(
             .navigationBarsPadding(),
         contentAlignment = Alignment.Center
     ) {
-        // Ambient background color glow reflecting active theme
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .blur(40.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            activeTheme.accentColor.copy(alpha = 0.2f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-
         GlassmorphicCard(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
@@ -3798,8 +3915,7 @@ fun SecurityLockScreen(
                         .size(84.dp)
                         .scale(pulseScale)
                         .clip(CircleShape)
-                        .background(activeTheme.accentColor.copy(alpha = 0.15f))
-                        .border(2.dp, activeTheme.accentColor, CircleShape),
+                        .background(activeTheme.accentColor.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -3909,7 +4025,7 @@ fun CalendarViewerScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回首頁",
-                        tint = if (isNight) Color.White else Color(0xFF0F172A)
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
@@ -3922,7 +4038,7 @@ fun CalendarViewerScreen(
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 0.5.sp
                         ),
-                        color = if (isNight) Color.White else Color(0xFF0F172A)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "Calendar Task Viewer",
@@ -3961,8 +4077,7 @@ fun CalendarViewerScreen(
                                 modifier = Modifier
                                     .size(72.dp)
                                     .clip(CircleShape)
-                                    .background(activeTheme.accentColor.copy(alpha = 0.15f))
-                                    .border(1.5.dp, activeTheme.accentColor, CircleShape),
+                                    .background(activeTheme.accentColor.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -3976,7 +4091,7 @@ fun CalendarViewerScreen(
                             Text(
                                 text = "需要行事曆讀取權限",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (isNight) Color.White else Color(0xFF0F172A)
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             
                             Text(
@@ -3985,7 +4100,7 @@ fun CalendarViewerScreen(
                                     lineHeight = 22.sp,
                                     textAlign = TextAlign.Center
                                 ),
-                                color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
@@ -4100,14 +4215,14 @@ fun CalendarViewerScreen(
                                 Text(
                                     text = "今日尚無安排行程 🎉延續放鬆節奏吧！",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (isNight) Color.White else Color(0xFF0F172A),
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     textAlign = TextAlign.Center
                                 )
                                 
                                 Text(
                                     text = "請確認您的系統行事曆中是否有新增當前日期活動，或是稍後下拉頁面重新同步整理。",
                                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                    color = if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF64748B),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -4188,7 +4303,7 @@ fun CalendarEventItemCard(
                     Text(
                         text = event.title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (isNight) Color.White else Color(0xFF0F172A),
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -4208,7 +4323,7 @@ fun CalendarEventItemCard(
                         Text(
                             text = formatEventTimeSpanDetail(event.startTime, event.endTime),
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF475569)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -4303,7 +4418,8 @@ fun ExternalSystemWidgetCard(
     val context = LocalContext.current
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
     val appWidgetHost = remember { AppWidgetHost(context, APPWIDGET_HOST_ID) }
-    val themed = remember(weather, isNight) { getWeatherThemedColors(weather, isNight) }
+    val systemPrimary = MaterialTheme.colorScheme.primary
+    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
     val appWidgetInfo = remember(appWidgetId) {
         appWidgetManager.getAppWidgetInfo(appWidgetId)
@@ -4328,14 +4444,14 @@ fun ExternalSystemWidgetCard(
                         appWidgetInfo.loadLabel(context.packageManager),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 }
                 IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "移除",
-                        tint = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -4355,4 +4471,74 @@ fun ExternalSystemWidgetCard(
         }
     }
 }
+
+/**
+ * Custom Material 3 Expressive scale bounce effect for any clickable element.
+ * Provides organic, physical spring squeeze reaction on touch and rebounds gracefully on release.
+ */
+@Composable
+fun Modifier.expressiveBounceClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = 0.55f, // Bouncy physical spring characteristics
+            stiffness = 350f,     // Fast, organic frequency response
+        ),
+        label = "ExpressiveBounceClickableScale"
+    )
+    
+    return this
+        .scale(scale)
+        .clickable(
+            interactionSource = interactionSource,
+            indication = androidx.compose.foundation.LocalIndication.current,
+            enabled = enabled,
+            onClick = onClick
+        )
+}
+
+/**
+ * Custom generic Material 3 Expressive spring bounce modifier for elements
+ * that already use their own native clicks or buttons (e.g. Button, FloatingActionButton).
+ * Uses initial pass pointer input to detect touches non-consumingly, avoiding event blocking!
+ */
+@Composable
+fun Modifier.expressiveBounce(enabled: Boolean = true): Modifier {
+    if (!enabled) return this
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = 0.55f, // Elastic spring rebound (Material 3 expressive)
+            stiffness = 380f      // Energetic response
+        ),
+        label = "ExpressiveBounceScale"
+    )
+    
+    return this
+        .scale(scale)
+        .pointerInput(enabled) {
+            if (enabled) {
+                // Intercept gestures non-consumingly during initial pass
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val changes = event.changes
+                        if (changes.any { it.pressed }) {
+                            isPressed = true
+                        } else if (changes.all { !it.pressed }) {
+                            isPressed = false
+                        }
+                    }
+                }
+            }
+        }
+}
+
 

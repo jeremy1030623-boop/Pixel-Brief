@@ -14,23 +14,11 @@ import java.util.*
 import kotlinx.serialization.json.Json
 
 class MorningViewModel(application: Application) : AndroidViewModel(application) {
-    private var dbCache: AppDatabase? = null
-    
-    private fun getDb(): AppDatabase? {
-        if (dbCache != null) return dbCache
-        return try {
-            val db = AppDatabase.getDatabase(getApplication())
-            dbCache = db
-            db
-        } catch (e: Throwable) {
-            android.util.Log.e("MorningViewModel", "Failed to initialize database", e)
-            null
-        }
-    }
+    private fun getDb(): AppDatabase = AppDatabase.getDatabase(getApplication())
     
     private val calendarRepository = CalendarRepository(application.contentResolver)
     private val locationHelper = LocationHelper(application)
-    
+    private val briefingRepository = BriefingRepository(application.applicationContext, getDb())
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _isRefreshing = MutableStateFlow(false)
@@ -337,8 +325,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
     
     private suspend fun updateFunFact() {
         _funFact.value = try {
-            val context = getApplication<Application>().applicationContext
-            com.example.api.GoogleGenAiClient.generateContent(context, "請提供一個有趣的冷知識，字數 50 字以內，繁體中文。")
+            briefingRepository.getBriefingAction("請提供一個有趣的冷知識，字數 50 字以內，繁體中文。")
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -397,8 +384,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         val modelName = _userSettings.value?.geminiModelSelected ?: "Gemini Flash Latest"
         
         _goalSuggestion.value = try {
-            val context = getApplication<Application>().applicationContext
-            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
+            val responseText = briefingRepository.getBriefingAction(prompt)
             responseText.trim()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -476,11 +462,9 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
 
     private suspend fun fetchHealthTrend(data: HealthConnectHelper.HealthData): String {
         val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請分析以下昨晚到今天的健康數據，並提供一段字數約 80-120 字的『深度健康生活綜合指導文字簡報』，包含具體的身體狀態評估、今日飲食與運動之科學建議，以及晨間開機的精神小叮嚀。請務必溫馨且充滿細節，直接返回簡報文字，不要有任何標題或外層引號。數據：睡眠 ${data.sleepHours} 小時（品質：${data.sleepQuality}，打鼾 ${data.snoringMinutes} 分鐘，咳嗽 ${data.coughCount} 次），今日步數 ${data.dailySteps} 步，平均心率 ${data.avgHeartRate} bpm。"
-        val modelName = "gemini-nano" 
         
         return try {
-            val context = getApplication<Application>().applicationContext
-            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
+            val responseText = briefingRepository.getBriefingAction(prompt)
             responseText.trim()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -898,8 +882,7 @@ class MorningViewModel(application: Application) : AndroidViewModel(application)
         val modelName = _userSettings.value?.geminiModelSelected ?: "gemini-1.5-flash"
         
         try {
-            val context = getApplication<Application>().applicationContext
-            val responseText = com.example.api.GoogleGenAiClient.generateContent(context, prompt, modelName)
+            val responseText = briefingRepository.getBriefingAction(prompt)
             val cleanedJson = responseText.replace("```json", "").replace("```", "").trim()
             
             val news = json.decodeFromString<List<NewsItem>>(cleanedJson)

@@ -1,3 +1,7 @@
+import java.net.URL
+import java.net.HttpURLConnection
+import java.net.URI
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -108,6 +112,7 @@ dependencies {
   implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
   implementation(libs.google.generativeai)
   implementation(libs.androidx.health.connect)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation("androidx.biometric:biometric:1.1.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
@@ -128,3 +133,44 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+tasks.register("downloadFonts") {
+    notCompatibleWithConfigurationCache("Downloads assets from Github raw content")
+    doLast {
+        val fontsDir = file("src/main/res/font")
+        if (!fontsDir.exists()) {
+            fontsDir.mkdirs()
+        }
+        val baseUrl = "https://raw.githubusercontent.com/tiwa244/Google-Sans-Rounded/main"
+        val fontsToDownload = mapOf(
+            "google_sans_rounded_regular.ttf" to "$baseUrl/GoogleSansRounded-Regular.ttf",
+            "google_sans_rounded_medium.ttf" to "$baseUrl/GoogleSansRounded-Medium.ttf",
+            "google_sans_rounded_bold.ttf" to "$baseUrl/GoogleSansRounded-Bold.ttf"
+        )
+        for ((fileName, downloadUrl) in fontsToDownload) {
+            val destinationFile = File(fontsDir, fileName)
+            if (!destinationFile.exists()) {
+                println("Downloading $fileName...")
+                try {
+                    val connection = URI(downloadUrl).toURL().openConnection() as HttpURLConnection
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    connection.inputStream.use { input ->
+                        destinationFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    println("Successfully downloaded $fileName")
+                } catch (e: Exception) {
+                    println("Failed to download $fileName: ${e.message}")
+                }
+            } else {
+                println("$fileName already exists.")
+            }
+        }
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn("downloadFonts")
+}
+
