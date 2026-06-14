@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
@@ -2376,32 +2378,21 @@ fun SleepCard(
             AnimatedContent(
                 targetState = briefingState,
                 transitionSpec = {
-                    (fadeIn(animationSpec = tween(500, easing = LinearOutSlowInEasing)) + 
-                     scaleIn(initialScale = 0.92f, animationSpec = tween(500, easing = LinearOutSlowInEasing)))
-                        .togetherWith(fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 0.92f, animationSpec = tween(300)))
+                    (fadeIn(animationSpec = tween(600, easing = LinearOutSlowInEasing)) + 
+                     expandVertically(animationSpec = tween(600, easing = LinearOutSlowInEasing)))
+                        .togetherWith(fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300)))
                 },
                 label = "briefing_status_transition"
             ) { state ->
                 when (state) {
                     is BriefingState.Loading -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = themed.accent.copy(alpha = 0.7f),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                "AI 正在分析您的健康趨勢...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
-                        }
+                        BriefingShimmer()
                     }
                     is BriefingState.Success -> {
+                        val haptic = LocalHapticFeedback.current
+                        LaunchedEffect(state) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
                         Text(
                             state.content,
                             style = MaterialTheme.typography.bodySmall,
@@ -2411,9 +2402,9 @@ fun SleepCard(
                     }
                     is BriefingState.Error -> {
                         Text(
-                            "分析失敗: ${state.message}",
+                            "暫時無法生成分析",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                            color = Color.White.copy(alpha = 0.4f)
                         )
                     }
                     else -> {
@@ -2426,6 +2417,56 @@ fun SleepCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun BriefingShimmer() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val xOffset by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_offset"
+    )
+
+    val shimmerColors = listOf(
+        Color.White.copy(alpha = 0.05f),
+        Color.White.copy(alpha = 0.15f),
+        Color.White.copy(alpha = 0.05f),
+    )
+
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset(xOffset * 500f, 0f),
+        end = Offset(xOffset * 500f + 250f, 100f)
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(brush)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(brush)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(brush)
+        )
     }
 }
 

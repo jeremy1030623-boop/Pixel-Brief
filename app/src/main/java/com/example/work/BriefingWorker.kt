@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.example.data.AppDatabase
 import com.example.data.BriefingRepository
 import com.example.util.BriefingNotificationHelper
+import kotlinx.coroutines.flow.first
 
 class BriefingWorker(
     appContext: Context,
@@ -19,8 +20,12 @@ class BriefingWorker(
         val db = AppDatabase.getDatabase(applicationContext)
         val repository = BriefingRepository(applicationContext, db)
         
-        // Use a generic morning prompt
-        val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請為用戶準備一段今日的晨間問候與簡短的健康提醒。字數約 60-80 字，使用繁體中文。"
+        // Read user settings for personalization
+        val settings = db.userSettingsDao().getUserSettings().first()
+        val username = settings?.username ?: "用戶"
+        
+        // Use a personalized morning prompt
+        val prompt = "你是專業且溫柔的個人健康規劃與生活大師。請為用戶 ${username} 準備一段今日的晨間問候與簡短的健康提醒。字數約 80-120 字，語氣親切溫暖，使用繁體中文。請包含一段專屬的開場白（例如：早安，${username}！）。"
         
         return try {
             val briefing = repository.getBriefingAction(prompt, forceRefresh = true)

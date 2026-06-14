@@ -29,7 +29,14 @@ class BriefingUnlockReceiver : BroadcastReceiver() {
                 if (lastRun != today) {
                     Log.d("BriefingUnlockReceiver", "Morning unlock detected. Triggering briefing...")
                     
-                    val workRequest = OneTimeWorkRequestBuilder<BriefingWorker>().build()
+                    val constraints = androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .setRequiresBatteryNotLow(true)
+                        .build()
+
+                    val workRequest = OneTimeWorkRequestBuilder<BriefingWorker>()
+                        .setConstraints(constraints)
+                        .build()
                     WorkManager.getInstance(context).enqueue(workRequest)
 
                     // Mark as run for today
