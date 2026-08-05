@@ -47,7 +47,11 @@ class MorningTtsManager(
     fun setLanguage(langCode: String) {
         currentLangCode = langCode
         if (isReady) {
-            val actualCode = if (langCode == "system_default") Locale.getDefault().toString() else langCode
+            val actualCode = if (langCode == "system_default") {
+                Locale.getDefault().toString().replace("-", "_")
+            } else {
+                langCode.replace("-", "_")
+            }
             val locale = when (actualCode) {
                 "zh_TW" -> Locale.TRADITIONAL_CHINESE
                 "zh_CN" -> Locale.SIMPLIFIED_CHINESE

@@ -14,6 +14,7 @@ data class UserSettings(
     val sleepHours: Float = 0f,
     val sleepSnoringMinutes: Int = 0,
     val sleepCoughCount: Int = 0,
+    val sleepQualityScore: Int = 0,
     val lastSyncTime: String = "",
     val dailySteps: Int = 0,
     val avgHeartRate: Int = 0,
@@ -31,12 +32,12 @@ data class UserSettings(
     val tasksIntegrationEnabled: Boolean = false,
     val aiActivityAnalysisEnabled: Boolean = false,
     // News Feed
-    val displayedNewsCount: Int = 3,
+    val displayedNewsCount: Int = 2,
     val newsMode: String = "local", // "local" or "international"
     // System & Permissions
     val is24HourFormat: Boolean = true,
     // Gemini Settings
-    val geminiModelSelected: String = "gemini-1.5-flash",
+    val geminiModelSelected: String = "gemini-3.5-flash",
     // SystemClock Sync Timing
     val sleepSyncDurationMs: Long = 0,
     // Custom Avatar Settings

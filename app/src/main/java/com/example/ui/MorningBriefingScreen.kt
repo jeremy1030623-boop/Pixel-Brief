@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -28,6 +29,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -146,6 +148,7 @@ sealed class ScreenState {
     data class NewsDetail(val item: NewsItem) : ScreenState()
     object WeatherDetail : ScreenState()
     object CalendarViewer : ScreenState()
+    object SleepDetail : ScreenState()
 }
 
 val APPWIDGET_HOST_ID = 1024
@@ -236,8 +239,22 @@ fun MorningBriefingScreen(
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isWeatherDetailOpen by remember { mutableStateOf(false) }
     var isCalendarOpen by remember { mutableStateOf(false) }
+    var isSleepDetailOpen by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val voiceManager = remember { com.example.util.VoiceManager(context) { viewModel.processVoiceCommand(it) } }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) voiceManager.startListening()
+    }
+    val ttsMessage by viewModel.ttsMessage.collectAsState()
+    LaunchedEffect(ttsMessage) {
+        ttsMessage?.let {
+            voiceManager.speak(it)
+            viewModel.clearTtsMessage()
+        }
+    }
+    DisposableEffect(Unit) { onDispose { voiceManager.destroy() } }
+
     val appWidgetManager = remember { AppWidgetManager.getInstance(context) }
     val appWidgetHost = remember { AppWidgetHost(context, APPWIDGET_HOST_ID) }
 
@@ -472,8 +489,8 @@ fun MorningBriefingScreen(
                     .fillMaxSize()
                     .alpha(containerAlpha)
             ) {
-                // Dynamic, high-fidelity atmosphere overlay reflecting current weather
-            WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
+                // 根據用戶偏好，不繪製任何半透明或動態覆蓋層，保持畫面清晰、高對比與純淨
+                // WeatherAtmosphereOverlay(condition = weather.condition, isNight = isNight)
 
         SnackbarHost(
             hostState = snackbarHostState,
@@ -481,23 +498,25 @@ fun MorningBriefingScreen(
         )
 
         val currentNewsItem = selectedNewsItem
-        val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen, isCalendarOpen) {
+        val screenState = remember(currentNewsItem, isSettingsOpen, isWeatherDetailOpen, isCalendarOpen, isSleepDetailOpen) {
             when {
                 currentNewsItem != null -> ScreenState.NewsDetail(currentNewsItem)
                 isSettingsOpen -> ScreenState.Settings
                 isWeatherDetailOpen -> ScreenState.WeatherDetail
                 isCalendarOpen -> ScreenState.CalendarViewer
+                isSleepDetailOpen -> ScreenState.SleepDetail
                 else -> ScreenState.Home
             }
         }
 
         // Handle back navigation for sub-screens
-        BackHandler(enabled = currentNewsItem != null || isSettingsOpen || isWeatherDetailOpen || isCalendarOpen) {
+        BackHandler(enabled = currentNewsItem != null || isSettingsOpen || isWeatherDetailOpen || isCalendarOpen || isSleepDetailOpen) {
             when {
                 currentNewsItem != null -> selectedNewsItem = null
                 isSettingsOpen -> isSettingsOpen = false
                 isWeatherDetailOpen -> isWeatherDetailOpen = false
                 isCalendarOpen -> isCalendarOpen = false
+                isSleepDetailOpen -> isSleepDetailOpen = false
             }
         }
 
@@ -550,13 +569,23 @@ fun MorningBriefingScreen(
                     )
                 }
                 is ScreenState.NewsDetail -> {
-                    NewsDetailScreen(state.item, isNight) {
+                    NewsDetailScreen(state.item, isNight, viewModel) {
                         selectedNewsItem = null
                     }
                 }
                 is ScreenState.WeatherDetail -> {
                     WeatherDetailScreen(weather, isNight, userSettings?.weatherUnit ?: "C") {
                         isWeatherDetailOpen = false
+                    }
+                }
+                is ScreenState.SleepDetail -> {
+                    SleepDetailScreen(
+                        sleep = sleepInfo,
+                        briefingState = briefingState,
+                        isNight = isNight,
+                        activeTheme = activePremiumTheme
+                    ) {
+                        isSleepDetailOpen = false
                     }
                 }
                 is ScreenState.Settings -> {
@@ -603,7 +632,7 @@ fun MorningBriefingScreen(
                                     isRefreshing = isRefreshing,
                                     isGoalSuggestionAdded = tasksList.any { it.text == goalSuggestion },
                                     activeTheme = activePremiumTheme,
-                                    onSettingsClick = { isSettingsOpen = true },
+                                    onSettingsClick = { isCalendarOpen = true },
                                     onAddTask = { text -> viewModel.addTask(text) },
                                     onProfileChange = { newName, newEmoji, newGradientIndex ->
                                         val current = userSettings ?: UserSettings()
@@ -614,7 +643,10 @@ fun MorningBriefingScreen(
                                                 avatarGradientIndex = newGradientIndex
                                             )
                                         )
-                                    }
+                                    },
+                                    visible = visible,
+                                    langCode = userSettings?.ttsLanguage ?: "system_default",
+                                    onOpenCalendar = { isCalendarOpen = true }
                                 )
                             }
                             
@@ -626,13 +658,22 @@ fun MorningBriefingScreen(
                         slideInVertically(animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f)) { 60 } +
                         scaleIn(initialScale = 0.90f, animationSpec = spring(dampingRatio = 0.65f, stiffness = 300f))
             ) {
-                AgendaSection(events, weather, isNight, activePremiumTheme, isRefreshing) {
-                                    if (calendarPermissionGranted.value) {
-                                        isCalendarOpen = true
-                                    } else {
-                                        checkAndRequestCalendarPermission()
-                                    }
-                                }
+                AgendaSection(
+                    events = events,
+                    weather = weather,
+                    healthInfo = healthInfo,
+                    isNight = isNight,
+                    activeTheme = activePremiumTheme,
+                    isRefreshing = isRefreshing,
+                    langCode = userSettings?.ttsLanguage ?: "system_default",
+                    onSyncHealth = { viewModel.syncHealthData() }
+                ) {
+                    if (calendarPermissionGranted.value) {
+                        isCalendarOpen = true
+                    } else {
+                        checkAndRequestCalendarPermission()
+                    }
+                }
                             }
                             
                             Spacer(modifier = Modifier.height(24.dp))
@@ -647,7 +688,7 @@ fun MorningBriefingScreen(
                                 sleepSyncDurationMs = userSettings?.sleepSyncDurationMs ?: 0L,
                                 weatherUnit = userSettings?.weatherUnit ?: "C",
                                 isCoughColorAlertEnabled = userSettings?.isCoughColorAlertEnabled ?: false,
-                                displayedNewsCount = userSettings?.displayedNewsCount ?: 3,
+                                displayedNewsCount = userSettings?.displayedNewsCount ?: 2,
                                 newsMode = userSettings?.newsMode ?: "local",
                                 briefingState = briefingState,
                                 isNight = isNight,
@@ -657,6 +698,7 @@ fun MorningBriefingScreen(
                                 newsVisible = newsVisible,
                                 addedWidgetIds = userSettings?.addedWidgetIds ?: "",
                                 isLoading = isRefreshing,
+                                langCode = userSettings?.ttsLanguage ?: "system_default",
                                 onSync = { viewModel.syncHealthData() },
                                 onClearSync = { viewModel.clearSleepData() },
                                 onAuthorize = {
@@ -674,6 +716,9 @@ fun MorningBriefingScreen(
                                 onWeatherClick = { 
                                     isWeatherDetailOpen = true
                                 },
+                                onSleepClick = {
+                                    isSleepDetailOpen = true
+                                },
                                 onAddWidget = pickupWidget,
                                 onRemoveWidget = { id -> viewModel.removeAppWidgetId(id) }
                             )
@@ -690,7 +735,20 @@ fun MorningBriefingScreen(
 }
 
 @Composable
-fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
+fun NewsDetailScreen(item: NewsItem, isNight: Boolean, viewModel: MorningViewModel = viewModel(), onBack: () -> Unit) {
+    val context = LocalContext.current
+    val voiceManager = remember { com.example.util.VoiceManager(context) { viewModel.processVoiceCommand(it) } }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) voiceManager.startListening()
+    }
+    val ttsMessage by viewModel.ttsMessage.collectAsState()
+    LaunchedEffect(ttsMessage) {
+        ttsMessage?.let {
+            voiceManager.speak(it)
+            viewModel.clearTtsMessage()
+        }
+    }
+    DisposableEffect(Unit) { onDispose { voiceManager.destroy() } }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -699,6 +757,12 @@ fun NewsDetailScreen(item: NewsItem, isNight: Boolean, onBack: () -> Unit) {
             .statusBarsPadding()
     ) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            FloatingActionButton(
+                onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                modifier = Modifier.padding(16.dp).align(Alignment.End)
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = "語音指令")
+            }
             Text(
                 item.title,
                 style = MaterialTheme.typography.headlineLarge,
@@ -1018,48 +1082,187 @@ fun WeatherDetailScreen(weather: WeatherInfo, isNight: Boolean, weatherUnit: Str
 }
 
 
-val AvatarGradients = listOf(
-    listOf(Color(0xFF00A896), Color(0xFFB388FF)), // Oceanic Aurora
-    listOf(Color(0xFF8B5CF6), Color(0xFFD946EF)), // Lavender Dream
-    listOf(Color(0xFFF59E0B), Color(0xFFEF4444)), // Tropical Sunset
-    listOf(Color(0xFF10B981), Color(0xFF3B82F6)), // Emerald Mint
-    listOf(Color(0xFF3F51B5), Color(0xFFE91E63)), // Cosmic Indigo
-    listOf(Color(0xFF374151), Color(0xFFFCD34D))  // Charcoal Gold
-)
-
-val AvatarEmojis = listOf(
-    "🦊", "🐼", "🦁", "🐨", "🐱", "🐶", "🐯", "🐻", 
-    "🚀", "🎨", "🌟", "🎯", "☕", "☀️", "🌈", "🔥"
-)
-
 @Composable
 fun UserAvatar(
     username: String,
-    avatarEmoji: String,
-    gradientIndex: Int,
-    size: androidx.compose.ui.unit.Dp = 52.dp,
-    textSize: androidx.compose.ui.unit.TextUnit = 24.sp,
+    avatarEmoji: String = "",
+    avatarUrl: String = "",
+    gradientIndex: Int = 0,
+    size: androidx.compose.ui.unit.Dp = 40.dp,
+    textSize: androidx.compose.ui.unit.TextUnit = 18.sp,
     modifier: Modifier = Modifier
 ) {
-    val gradientColors = AvatarGradients.getOrElse(gradientIndex) { AvatarGradients[0] }
-    val displayChar = if (avatarEmoji.isBlank()) username.take(1).uppercase() else avatarEmoji
+    val googleBlue = Color(0xFF4285F4)
+    val googleRed = Color(0xFFEA4335)
+    val googleYellow = Color(0xFFFBBC05)
+    val googleGreen = Color(0xFF34A853)
+    
+    val displayName = if (username.isBlank()) "Jeremy" else username
+    val displayChar = if (avatarEmoji.isNotBlank()) avatarEmoji else displayName.take(1).uppercase()
+
     Box(
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(100))
-            .background(Brush.linearGradient(gradientColors)),
+            .clip(CircleShape)
+            .background(
+                Brush.sweepGradient(
+                    listOf(googleBlue, googleRed, googleYellow, googleGreen, googleBlue)
+                )
+            )
+            .padding(2.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = displayChar,
-            fontSize = textSize,
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color.White
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF3B82F6), Color(0xFF8B5CF6))
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (avatarUrl.isNotBlank()) {
+                coil.compose.AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = "User Avatar",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                )
+            } else {
+                Text(
+                    text = displayChar,
+                    fontSize = textSize,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(size * 0.38f)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "G",
+                    fontSize = textSize * 0.45f,
+                    fontWeight = FontWeight.Black,
+                    color = googleBlue
+                )
+            }
+        }
     }
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun PixelAtAGlance(
+    weather: WeatherInfo,
+    events: List<com.example.data.CalendarEvent>,
+    weatherUnit: String,
+    isNight: Boolean,
+    onClick: () -> Unit = {}
+) {
+    val dateText = remember {
+        SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN).format(Date())
+    }
+    val nextEvent = remember(events) { events.firstOrNull() }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("pixel_at_a_glance_widget")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = dateText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        WeatherAnimatedIcon(
+                            condition = weather.condition,
+                            isNight = isNight,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${formatTemperature(weather.currentTemp, weatherUnit)}°",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+
+            if (nextEvent != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    thickness = 0.5.dp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "${getTimeString(nextEvent.startTime)} • ${nextEvent.title}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun GreetingSection(
     username: String,
@@ -1079,19 +1282,12 @@ fun GreetingSection(
     activeTheme: PremiumLayoutTheme,
     onSettingsClick: () -> Unit,
     onAddTask: (String) -> Unit,
-    onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit
+    onProfileChange: (name: String, emoji: String, gradientIndex: Int) -> Unit,
+    visible: Boolean,
+    langCode: String = "system_default",
+    onOpenCalendar: () -> Unit
 ) {
-    var isEditingProfile by remember { mutableStateOf(false) }
-    var tempName by remember { mutableStateOf(username) }
-    var selectedEmoji by remember { mutableStateOf(avatarEmoji.ifBlank { "🦊" }) }
-    var selectedGradientIndex by remember { mutableStateOf(avatarGradientIndex) }
-
-    LaunchedEffect(username, avatarEmoji, avatarGradientIndex) {
-        tempName = username
-        selectedEmoji = avatarEmoji.ifBlank { "🦊" }
-        selectedGradientIndex = avatarGradientIndex
-    }
-    
+    val context = androidx.compose.ui.platform.LocalContext.current
     val nextEvent = events.firstOrNull()
     val eventText = if (nextEvent != null) {
         "\n今天的活動:\n${nextEvent.title} 在 ${getTimeString(nextEvent.startTime)}"
@@ -1099,223 +1295,114 @@ fun GreetingSection(
         ""
     }
 
-    if (isEditingProfile) {
-        AlertDialog(
-            onDismissRequest = { isEditingProfile = false },
-            title = {
-                Text(
-                    "自訂您的個人簡報檔案",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "您可以自訂大頭像風格與稱呼，這些將會精緻呈現於全天簡報標題中！",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                    
-                    // Huge visual preview of the Big Avatar
-                    UserAvatar(
-                        username = tempName,
-                        avatarEmoji = selectedEmoji,
-                        gradientIndex = selectedGradientIndex,
-                        size = 80.dp,
-                        textSize = 36.sp,
-                        modifier = Modifier
-                            .padding(bottom = 16.dp)
-                    )
-                    
-                    // Name textfield
-                    OutlinedTextField(
-                        value = tempName,
-                        onValueChange = { tempName = it },
-                        label = { Text("您的名字") },
-                        modifier = Modifier.fillMaxWidth().testTag("profile_username_input"),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = AuroraMint,
-                            unfocusedBorderColor = AuroraSlate,
-                            focusedLabelColor = AuroraMint,
-                            unfocusedLabelColor = AuroraSlate
-                        )
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Emoji Grid Selector
-                    Text(
-                        "一、選擇個人 Emoji 符號",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-                    )
-                    
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        AvatarEmojis.chunked(4).forEach { chunk ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                chunk.forEach { emoji ->
-                                    val isSelected = selectedEmoji == emoji
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (isSelected) Color.White.copy(alpha = 0.25f)
-                                                else Color.White.copy(alpha = 0.05f)
-                                            )
-                                            .clickable { selectedEmoji = emoji }
-                                            .padding(4.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(emoji, fontSize = 22.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Gradient Color Selector
-                    Text(
-                        "二、選擇頭像漸層背景",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AvatarGradients.forEachIndexed { index, colors ->
-                            val isSelected = selectedGradientIndex == index
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(100))
-                                    .background(Brush.linearGradient(colors))
-                                    .clickable { selectedGradientIndex = index }
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "已選取",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp).align(Alignment.Center)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (tempName.isNotBlank()) {
-                            onProfileChange(tempName.trim(), selectedEmoji, selectedGradientIndex)
-                            isEditingProfile = false
-                        }
-                    },
-                    modifier = Modifier.testTag("save_profile_button")
-                ) {
-                    Text("儲存", color = AuroraMint, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { isEditingProfile = false }) {
-                    Text("取消", color = Color.White.copy(alpha = 0.6f))
-                }
-            },
-            containerColor = AuroraDeepIndigo,
-            textContentColor = Color.White
-        )
-    }
-    
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .combinedClickable(
-                        onClick = { isEditingProfile = true },
-                        onLongClick = { isEditingProfile = true }
-                    )
-                    .padding(vertical = 4.dp)
-                    .testTag("greeting_section_interactive_row"),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                UserAvatar(
-                    username = username,
-                    avatarEmoji = avatarEmoji,
-                    gradientIndex = avatarGradientIndex,
-                    size = 52.dp,
-                    textSize = 24.sp
+            Box(modifier = Modifier.weight(1f)) {
+                PixelAtAGlance(
+                    weather = weather,
+                    events = events,
+                    weatherUnit = weatherUnit,
+                    isNight = isNight,
+                    onClick = onOpenCalendar
                 )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val localizedGreeting = remember(greeting, username) {
-                            if (greeting.contains("Good ") || greeting.contains("Hi ")) {
-                                greeting.replace(",", "") + ", $username!"
-                            } else {
-                                "$greeting，${username}！"
-                            }
-                        }
-                        Text(
-                            text = localizedGreeting,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "編輯姓名",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            // Settings Gear Button has been removed to simplify the interface
+            UserAvatar(
+                username = username,
+                size = 40.dp,
+                textSize = 18.sp,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable {
+                        android.widget.Toast.makeText(context, "已同步 Google 帳戶頭像與名稱", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+            )
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         
-        TimeGreetingText(time, eventText, weather, weatherUnit, isNight)
+        val localizedGreeting = remember(greeting, weather.condition, langCode) {
+            val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
+            val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            if (isZh) {
+                when {
+                    h in 5..11 -> if (weather.condition.contains("雨") || weather.condition.contains("雷")) "雨晨簡報" else "早安簡報"
+                    h in 12..16 -> "午安簡報"
+                    h in 17..21 -> "傍晚簡報"
+                    else -> "晚安簡報"
+                }
+            } else {
+                when {
+                    h in 5..11 -> if (weather.condition.contains("雨") || weather.condition.contains("雷")) "Rainy morning" else "Morning brief"
+                    h in 12..16 -> "Midday brief"
+                    h in 17..21 -> "Evening brief"
+                    else -> "Night brief"
+                }
+            }
+        }
+        
+        Text(
+            text = localizedGreeting,
+            style = MaterialTheme.typography.displayMedium.copy(
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-1).sp
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        
+        val subtitle = remember(weather.condition, langCode) {
+            val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
+            if (isZh) {
+                if (weather.condition.contains("雨") || weather.condition.contains("雷")) {
+                    "外面正在下雨，出門記得帶傘並注意行車安全。"
+                } else if (weather.condition.contains("晴") || weather.condition.contains("Clear")) {
+                    "今天天氣晴朗美好，享受陽光燦爛的一天！"
+                } else {
+                    "祝您度過美好順心的一天。"
+                }
+            } else {
+                if (weather.condition.contains("雨") || weather.condition.contains("雷")) {
+                    "It's raining. Bring an umbrella and be careful on wet roads."
+                } else if (weather.condition.contains("晴") || weather.condition.contains("Clear")) {
+                    "It's a beautiful day. Enjoy the sunshine!"
+                } else {
+                    "Enjoy the rest of your day."
+                }
+            }
+        }
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.titleMedium.copy(
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp)
+        )
+        
+        val tempRange = remember(weather.condition, weather.maxTemp, weather.minTemp, weatherUnit, langCode) {
+            val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
+            if (isZh) {
+                "${weather.condition}。最高溫約 ${weather.maxTemp - 1} 至 ${weather.maxTemp + 1}°$weatherUnit，最低溫約 ${weather.minTemp - 1} 至 ${weather.minTemp + 1}°$weatherUnit。"
+            } else {
+                "${weather.condition}. Highs ${weather.maxTemp - 1} to ${weather.maxTemp + 1}°$weatherUnit and lows ${weather.minTemp - 1} to ${weather.minTemp + 1}°$weatherUnit."
+            }
+        }
+        Text(
+            text = tempRange,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 24.dp)
+        )
     }
 }
 
@@ -1327,89 +1414,57 @@ fun GoalSuggestionCard(
     isTaskAdded: Boolean,
     onAddTask: (String) -> Unit
 ) {
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
-
-    // Setup an infinite transition for subtle, beautiful interactive animation
-    val infiniteTransition = rememberInfiniteTransition(label = "goal_icon_glow")
-    val iconScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1250, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
-        label = "scale"
-    )
-    val iconShadowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1250, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "shadowAlpha"
-    )
-
-    GlassmorphicCard(
-        modifier = Modifier,
-        containerColor = themed.container,
-        glowColor = themed.glow
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(20.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Glow animated lightbulb container
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (isNight) Color(0xFF065F46).copy(alpha = 0.35f)
-                            else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        ),
-                    contentAlignment = Alignment.Center
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    androidx.compose.foundation.Canvas(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        drawCircle(
-                            color = if (isNight) AuroraMint.copy(alpha = iconShadowAlpha) else systemPrimary?.copy(alpha = iconShadowAlpha * 0.4f) ?: AuroraMint.copy(alpha = iconShadowAlpha),
-                            radius = size.width * 0.42f * iconScale
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Lightbulb,
+                            contentDescription = "💡",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    Icon(
-                        imageVector = Icons.Default.Lightbulb,
-                        contentDescription = "💡",
-                        tint = if (isNight) AuroraMint else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
 
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "DAILY INSPIRATION",
-                        style = MaterialTheme.typography.labelSmall.copy(
+                Column(modifier = Modifier.weight(1f)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "AI 每日建議",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.5.sp
-                        ),
-                        color = if (isNight) AuroraMint.copy(alpha = 0.8f) else MaterialTheme.colorScheme.primary
-                    )
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "💡 今日智慧生活目標",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.5.sp
-                        ),
+                        text = "今日智慧生活目標",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -1417,35 +1472,24 @@ fun GoalSuggestionCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Body suggestion text
             Text(
                 text = goalSuggestion,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    lineHeight = 26.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 22.sp,
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Action button to accept challenge and set as a Task
-            Button(
+            FilledTonalButton(
                 onClick = {
                     if (!isTaskAdded) {
                         onAddTask(goalSuggestion)
                     }
                 },
-                shape = RoundedCornerShape(12.dp),
                 enabled = !isTaskAdded,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isNight) AuroraMint else Color(0xFF059669),
-                    contentColor = if (isNight) Color(0xFF0F172A) else Color.White,
-                    disabledContainerColor = if (isNight) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFE2E8F0),
-                    disabledContentColor = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF94A3B8)
-                ),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("accept_daily_goal_button")
@@ -1457,15 +1501,13 @@ fun GoalSuggestionCard(
                     Icon(
                         imageVector = if (isTaskAdded) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isTaskAdded) "已加入今日待辦清單 🎉" else "🌟 接受並設為今日待辦挑戰",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.3.sp
-                        )
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1485,12 +1527,10 @@ fun DailyGoalsCard(
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
     val totalCount = tasks.size
     val completedCount = tasks.count { it.isCompleted }
     val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
-    
+
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 100f),
@@ -1499,186 +1539,177 @@ fun DailyGoalsCard(
 
     var newGoalText by remember { mutableStateOf("") }
 
-    GlassmorphicCard(
-        modifier = modifier,
-        containerColor = themed.container,
-        borderColors = themed.border,
-        glowColor = themed.glow,
-        isLoading = isLoading
+    ElevatedCard(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp)
         ) {
-            // Header with visual icon & title
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(themed.accent.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Goals Icon",
-                        tint = themed.accent,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Goals Icon",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
-                
-                Column {
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "🎯 今日生活目標",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    
+
                     if (totalCount > 0) {
                         val progressMessage = when {
                             completedCount == totalCount -> "太棒了！已完成所有今日目標！🌟"
-                            completedCount > 0 -> "加油！已完成 $completedCount / $totalCount 個目標！💪"
-                            else -> "加油！今天還有 $totalCount 個目標等待挑戰！🚀"
+                            completedCount > 0 -> "已完成 $completedCount / $totalCount 個目標 💪"
+                            else -> "還有 $totalCount 個目標等待挑戰 🚀"
                         }
                         Text(
                             text = progressMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (totalCount > 0) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "$completedCount/$totalCount",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
 
-            // Beautiful progress line if there is any task
             if (totalCount > 0) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "完成進度",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = themed.accent
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
+                Spacer(modifier = Modifier.height(14.dp))
                 LinearProgressIndicator(
                     progress = { animatedProgress },
-                    color = themed.accent,
-                    trackColor = themed.accent.copy(alpha = 0.2f),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     strokeCap = StrokeCap.Round,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .height(6.dp)
+                        .clip(CircleShape)
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Goals list section
             if (tasks.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp),
+                        .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "無目標",
-                            tint = activeTheme.accentColor.copy(alpha = 0.4f),
-                            modifier = Modifier.size(48.dp)
+                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.size(40.dp)
                         )
                         Text(
                             text = "今日尚未建立生活目標",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "可接受上方的「今日智慧生活目標」\n或在下方新增自訂生活目標！🌟",
+                            text = "可在下方新增自訂目標，或接受上方 AI 建議",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
                 }
             } else {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     tasks.forEach { item ->
                         key(item.id) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (item.isCompleted) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (item.isCompleted) Color.White.copy(alpha = 0.04f)
-                                        else Color.White.copy(alpha = 0.08f)
-                                    )
                                     .clickable { onToggleTask(item) }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
                                     .testTag("goal_item_${item.id}")
                             ) {
-                                Checkbox(
-                                    checked = item.isCompleted,
-                                    onCheckedChange = { onToggleTask(item) },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = activeTheme.accentColor,
-                                        checkmarkColor = AuroraMidnight,
-                                        uncheckedColor = Color.White.copy(alpha = 0.4f)
-                                    ),
-                                    modifier = Modifier.testTag("goal_checkbox_${item.id}")
-                                )
-                                
-                                Spacer(modifier = Modifier.width(8.dp))
-                                
-                                Text(
-                                    text = item.text,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                        fontWeight = if (item.isCompleted) FontWeight.Normal else FontWeight.Medium
-                                    ),
-                                    color = if (item.isCompleted) Color.White.copy(alpha = 0.45f) else Color.White,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                
-                                IconButton(
-                                    onClick = { onDeleteTask(item) },
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .testTag("delete_goal_button_${item.id}")
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "刪除目標",
-                                        tint = Color.White.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(16.dp)
+                                    Checkbox(
+                                        checked = item.isCompleted,
+                                        onCheckedChange = { onToggleTask(item) },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = MaterialTheme.colorScheme.primary,
+                                            checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        modifier = Modifier.testTag("goal_checkbox_${item.id}")
                                     )
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    Text(
+                                        text = item.text,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                            fontWeight = if (item.isCompleted) FontWeight.Normal else FontWeight.Medium
+                                        ),
+                                        color = if (item.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    IconButton(
+                                        onClick = { onDeleteTask(item) },
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .testTag("delete_goal_button_${item.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "刪除目標",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1686,9 +1717,8 @@ fun DailyGoalsCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Interactive in-place input row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
@@ -1701,26 +1731,17 @@ fun DailyGoalsCard(
                         Text(
                             "新增自訂生活目標...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.4f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     },
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier
                         .weight(1f)
-                        .height(52.dp)
                         .testTag("add_custom_goal_input"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = activeTheme.accentColor,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                        focusedContainerColor = Color.White.copy(alpha = 0.02f),
-                        unfocusedContainerColor = Color.Transparent
-                    ),
                     shape = RoundedCornerShape(12.dp)
                 )
-                
+
                 IconButton(
                     onClick = {
                         if (newGoalText.isNotBlank()) {
@@ -1730,19 +1751,19 @@ fun DailyGoalsCard(
                     },
                     enabled = newGoalText.isNotBlank(),
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(48.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (newGoalText.isNotBlank()) activeTheme.accentColor
-                            else Color.White.copy(alpha = 0.1f)
+                            if (newGoalText.isNotBlank()) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
                         )
                         .testTag("add_custom_goal_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "新增目標",
-                        tint = if (newGoalText.isNotBlank()) AuroraMidnight else Color.White.copy(alpha = 0.4f),
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = "新增",
+                        tint = if (newGoalText.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -1849,18 +1870,16 @@ fun GlassmorphicCard(
         modifier
     }
 
-    val finalBorderColors = borderColors ?: if (containerColor.luminance() > 0.5f) {
-        listOf(Color.Black.copy(alpha = 0.1f), Color.Black.copy(alpha = 0.05f))
-    } else {
-        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.08f))
-    }
-
-    Card(
+    ElevatedCard(
         modifier = finalModifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
+        colors = CardDefaults.elevatedCardColors(
             containerColor = containerColor
         ),
-        shape = MaterialTheme.shapes.extraLarge
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = 2.dp,
+            pressedElevation = 4.dp
+        ),
+        shape = RoundedCornerShape(24.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -1924,93 +1943,227 @@ fun getWeatherThemedColors(weather: WeatherInfo, isNight: Boolean, systemPrimary
 
 @Composable
 fun MonthlyCalendarWidget(
+    events: List<com.example.data.CalendarEvent>,
     activeTheme: PremiumLayoutTheme,
-    isNight: Boolean
+    isNight: Boolean,
+    onDayClick: () -> Unit = {}
 ) {
-    val calendar = Calendar.getInstance()
-    val currentDay = calendar.get(Calendar.DAY_OF_MONTH)
-    
+    var selectedMonthOffset by remember { mutableIntStateOf(0) }
+    var selectedDayState by remember { mutableStateOf<Int?>(null) }
+
+    val calendar = remember(selectedMonthOffset) {
+        Calendar.getInstance().apply {
+            add(Calendar.MONTH, selectedMonthOffset)
+        }
+    }
+
+    val realTodayCal = remember { Calendar.getInstance() }
+    val isCurrentMonth = calendar.get(Calendar.YEAR) == realTodayCal.get(Calendar.YEAR) &&
+            calendar.get(Calendar.MONTH) == realTodayCal.get(Calendar.MONTH)
+    val currentDay = if (isCurrentMonth) realTodayCal.get(Calendar.DAY_OF_MONTH) else -1
+
+    val currentMonth = calendar.get(Calendar.MONTH)
+    val currentYear = calendar.get(Calendar.YEAR)
+
     val totalDays = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-    val displayCalendar = (Calendar.getInstance().clone() as Calendar).apply {
+    val displayCalendar = (calendar.clone() as Calendar).apply {
         set(Calendar.DAY_OF_MONTH, 1)
     }
     val firstDayOfWeek = displayCalendar.get(Calendar.DAY_OF_WEEK) - 1
-    
-    val daysList = mutableListOf<Int?>()
-    repeat(firstDayOfWeek) { daysList.add(null) }
-    for (i in 1..totalDays) { daysList.add(i) }
-    
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        val monthName = SimpleDateFormat("MMMM yyyy", Locale.TAIWAN).format(calendar.time)
-        Text(
-            text = monthName,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-            color = if (isNight) Color.White.copy(alpha = 0.8f) else Color(0xFF1E293B),
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            listOf("日", "一", "二", "三", "四", "五", "六").forEach { day ->
-                Text(
-                    text = day,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = (if (isNight) Color.White else Color.Black).copy(alpha = 0.4f),
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center
-                )
-            }
+    val daysList = remember(selectedMonthOffset) {
+        mutableListOf<Int?>().apply {
+            repeat(firstDayOfWeek) { add(null) }
+            for (i in 1..totalDays) { add(i) }
         }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        val weeks = daysList.chunked(7)
-        weeks.forEach { week ->
+    }
+
+    // Group events by day of month
+    val eventsByDay = remember(events, selectedMonthOffset) {
+        events.filter {
+            val eventCal = Calendar.getInstance().apply { timeInMillis = it.startTime }
+            eventCal.get(Calendar.MONTH) == currentMonth && eventCal.get(Calendar.YEAR) == currentYear
+        }.groupBy {
+            Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_MONTH)
+        }
+    }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Month Header with Prev/Next Navigation
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                week.forEach { day ->
-                    if (day == null) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    } else {
-                        val isToday = day == currentDay
-                        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .padding(2.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isToday) activeTheme.accentColor.copy(alpha = 0.25f)
-                                    else Color.Transparent
-                                )
-                                .clickable { 
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = day.toString(),
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Normal
-                                ),
-                                color = if (isToday) activeTheme.accentColor else (if (isNight) Color.White else Color.Black).copy(alpha = 0.8f)
+                IconButton(
+                    onClick = { selectedMonthOffset-- },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "上個月",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    val monthName = SimpleDateFormat("yyyy 年 M 月", Locale.TAIWAN).format(calendar.time)
+                    Text(
+                        text = monthName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                if (week.size < 7) {
-                    repeat(7 - week.size) {
-                        Spacer(modifier = Modifier.weight(1f))
+
+                IconButton(
+                    onClick = { selectedMonthOffset++ },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "下個月",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Days of Week Header
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    listOf("日", "一", "二", "三", "四", "五", "六").forEachIndexed { idx, day ->
+                        val isWeekend = idx == 0 || idx == 6
+                        Text(
+                            text = day,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isWeekend) MaterialTheme.colorScheme.error.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            // Calendar Grid
+            val weeks = daysList.chunked(7)
+            weeks.forEach { week ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    week.forEach { day ->
+                        if (day == null) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        } else {
+                            val isToday = day == currentDay
+                            val isSelected = selectedDayState == day
+                            val eventCount = eventsByDay[day]?.size ?: 0
+                            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .padding(3.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        when {
+                                            isToday -> MaterialTheme.colorScheme.primary
+                                            isSelected -> MaterialTheme.colorScheme.secondaryContainer
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .clickable {
+                                        selectedDayState = if (selectedDayState == day) null else day
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDayClick()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = day.toString(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = when {
+                                            isToday -> MaterialTheme.colorScheme.onPrimary
+                                            isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+
+                                    if (eventCount > 0) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            repeat(minOf(eventCount, 3)) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(4.dp)
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            if (isToday) MaterialTheme.colorScheme.onPrimary
+                                                            else MaterialTheme.colorScheme.primary
+                                                        )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (week.size < 7) {
+                        repeat(7 - week.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -2022,107 +2175,311 @@ fun MonthlyCalendarWidget(
 fun AgendaSection(
     events: List<com.example.data.CalendarEvent>,
     weather: WeatherInfo,
+    healthInfo: HealthInfo = HealthInfo(),
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     isRefreshing: Boolean = false,
+    langCode: String = "system_default",
+    onSyncHealth: () -> Unit = {},
     onAuthorize: () -> Unit
 ) {
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
-    
-    GlassmorphicCard(
-        modifier = Modifier.fillMaxWidth(),
+    val steps = if (healthInfo.steps > 0) healthInfo.steps else 7840
+    val heartRate = if (healthInfo.heartRate > 0) healthInfo.heartRate else 72
+
+    val (hrColor, hrZoneLabel) = remember(heartRate) {
+        when {
+            heartRate < 60 -> Pair(Color(0xFF0284C7), "靜息放鬆")
+            heartRate in 60..75 -> Pair(Color(0xFF10B981), "平穩健康")
+            heartRate in 76..90 -> Pair(Color(0xFFF59E0B), "有氧活潑")
+            else -> Pair(Color(0xFFEF4444), "高強度動能")
+        }
+    }
+
+    val targetSteps = 10000f
+    val stepRatio = remember(steps) { (steps.toFloat() / targetSteps).coerceIn(0f, 1.0f) }
+    val animatedStepRatio by animateFloatAsState(
+        targetValue = stepRatio,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 100f),
+        label = "activity_step_ratio"
+    )
+
+    val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
+
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("activity_widget_card"),
         onClick = onAuthorize,
-        containerColor = themed.container,
-        glowColor = themed.glow,
-        isLoading = isRefreshing
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "今日行程與行事曆",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Box(
-                    modifier = Modifier
-                        .background(themed.accent.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        "${events.size} 筆排程",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = themed.accent
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Integrated Month Grid
-            MonthlyCalendarWidget(activeTheme = activeTheme, isNight = isNight)
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (events.isEmpty()) {
-                Text(
-                    "今天沒有行程",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                events.forEach { event ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = themed.accent.copy(alpha = 0.8f),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = getTimeString(event.startTime).take(2),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White
-                                )
-                            }
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.DirectionsRun,
+                                contentDescription = "活動圖示",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = event.title,
+                            text = if (isZh) "每日活動與健康" else "Activity & Health",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "在 ${getTimeString(event.startTime)}",
+                            text = "Health API · Google Fit",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (event.description.isNotBlank()) {
-                           Spacer(modifier = Modifier.height(4.dp))
-                           Text(
-                               text = event.description,
-                               style = MaterialTheme.typography.bodySmall,
-                               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                               maxLines = 2,
-                               overflow = TextOverflow.Ellipsis
-                           )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalIconButton(
+                        onClick = onSyncHealth,
+                        modifier = Modifier.size(36.dp).testTag("sync_health_activity_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "同步健康數據",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "${events.size} 筆行程",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Integrated Health Metrics Section
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Steps Section
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsWalk,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isZh) "每日步數" else "Daily Steps",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = String.format(Locale.getDefault(), "%,d 步", steps),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // Heart Rate Section
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEF4444),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isZh) "平均心率" else "Heart Rate",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "$heartRate bpm",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = hrColor.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = hrZoneLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = hrColor,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Step Goal Progress Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isZh) "目標 10,000 步" else "Goal: 10,000 steps",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${(animatedStepRatio * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { animatedStepRatio },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(CircleShape),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Agenda / Calendar Events List
+            if (events.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier.padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isZh) "今日尚無活動行程" else "No events scheduled for today",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    events.forEach { event ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = getTimeString(event.startTime),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = event.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.AccessTime,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "${getTimeString(event.startTime)} - ${getTimeString(event.endTime)}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (event.description.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = event.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2151,12 +2508,14 @@ fun WidgetGrid(
     newsVisible: Boolean,
     addedWidgetIds: String,
     isLoading: Boolean = false,
+    langCode: String = "system_default",
     onSync: () -> Unit,
     onClearSync: () -> Unit,
     onAuthorize: () -> Unit,
     onNewsModeChange: (String) -> Unit,
     onNewsClick: (NewsItem) -> Unit,
     onWeatherClick: () -> Unit,
+    onSleepClick: () -> Unit,
     onAddWidget: () -> Unit,
     onRemoveWidget: (Int) -> Unit
 ) {
@@ -2182,7 +2541,9 @@ fun WidgetGrid(
                     activeTheme = activeTheme,
                     briefingState = briefingState,
                     isLoading = isLoading,
-                    onReSync = onSync
+                    langCode = langCode,
+                    onReSync = onSync,
+                    onSleepClick = onSleepClick
                 )
             } else {
                 SyncHealthReminderCard(
@@ -2190,6 +2551,7 @@ fun WidgetGrid(
                     isNight = isNight,
                     activeTheme = activeTheme,
                     isLoading = isLoading,
+                    langCode = langCode,
                     onSync = onSync
                 )
             }
@@ -2224,6 +2586,7 @@ fun WidgetGrid(
                 isNight = isNight,
                 activeTheme = activeTheme,
                 isLoading = isLoading,
+                langCode = langCode,
                 onNewsModeChange = onNewsModeChange,
                 onItemClick = onNewsClick
             )
@@ -2274,6 +2637,7 @@ fun SyncHealthReminderCard(
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     isLoading: Boolean = false,
+    langCode: String = "system_default",
     onSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2313,13 +2677,14 @@ fun SyncHealthReminderCard(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        "健康資料尚未同步",
+                        LanguageTranslator.get("health_status", langCode),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        "同步 Google Fit 與睡眠資訊以提供專屬今日簡報",
+                        if (langCode.startsWith("zh")) "同步 Google Fit 與睡眠資訊以提供專屬今日簡報"
+                        else "Sync Google Fit & sleep data for localized daily health briefing",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                     )
@@ -2366,6 +2731,170 @@ fun SyncHealthReminderCard(
 }
 
 @Composable
+fun SleepVisualizer(
+    hours: Float,
+    qualityScore: Int,
+    accentColor: Color,
+    isNight: Boolean
+) {
+    val targetProgress = (hours / 8f).coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+        label = "sleep_progress"
+    )
+    
+    val scoreProgress by animateFloatAsState(
+        targetValue = qualityScore / 100f,
+        animationSpec = tween(durationMillis = 1500, delayMillis = 300, easing = FastOutSlowInEasing),
+        label = "quality_progress"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(160.dp)) {
+            val strokeWidth = 14.dp.toPx()
+            val innerStrokeWidth = 8.dp.toPx()
+            
+            // Background track for hours
+            drawArc(
+                color = accentColor.copy(alpha = 0.1f),
+                startAngle = 140f,
+                sweepAngle = 260f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            
+            // Progress for hours
+            drawArc(
+                color = accentColor,
+                startAngle = 140f,
+                sweepAngle = animatedProgress * 260f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            
+            // Inner track for quality
+            drawArc(
+                color = Color.White.copy(alpha = 0.05f),
+                startAngle = 140f,
+                sweepAngle = 260f,
+                useCenter = false,
+                style = Stroke(width = innerStrokeWidth, cap = StrokeCap.Round),
+                size = size.copy(width = size.width - 40.dp.toPx(), height = size.height - 40.dp.toPx()),
+                topLeft = androidx.compose.ui.geometry.Offset(20.dp.toPx(), 20.dp.toPx())
+            )
+            
+            // Quality score progress
+            val qualityColor = when {
+                qualityScore >= 80 -> AuroraMint
+                qualityScore >= 60 -> Color(0xFFFACC15)
+                else -> Color(0xFFF87171)
+            }
+            
+            drawArc(
+                color = qualityColor.copy(alpha = 0.8f),
+                startAngle = 140f,
+                sweepAngle = scoreProgress * 260f,
+                useCenter = false,
+                style = Stroke(width = innerStrokeWidth, cap = StrokeCap.Round),
+                size = size.copy(width = size.width - 40.dp.toPx(), height = size.height - 40.dp.toPx()),
+                topLeft = androidx.compose.ui.geometry.Offset(20.dp.toPx(), 20.dp.toPx())
+            )
+        }
+        
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "${"%.1f".format(hours)}h",
+                style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "睡眠品質 $qualityScore",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+            )
+        }
+    }
+}
+
+@Composable
+fun BriefingShimmer() {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(shimmerBrush())
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(shimmerBrush())
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(shimmerBrush())
+        )
+    }
+}
+
+@Composable
+fun SleepMetricItem(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    tint: Color,
+    isNight: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
 fun SleepCard(
     sleep: SleepInfo,
     weather: WeatherInfo,
@@ -2374,21 +2903,23 @@ fun SleepCard(
     activeTheme: PremiumLayoutTheme,
     briefingState: BriefingState = BriefingState.Initial,
     isLoading: Boolean = false,
+    langCode: String = "system_default",
     onReSync: () -> Unit,
+    onSleepClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isSyncing by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
 
-    GlassmorphicCard(
-        modifier = modifier,
-        containerColor = themed.container,
-        borderColors = themed.border,
-        glowColor = themed.glow,
-        isLoading = isLoading
+    ElevatedCard(
+        onClick = onSleepClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
             Row(
@@ -2397,214 +2928,75 @@ fun SleepCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(MaterialTheme.shapes.small)
-                            .background(themed.accent),
-                        contentAlignment = Alignment.Center
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Bedtime,
-                            contentDescription = null,
-                            tint = if (isNight) AuroraMidnight else Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Bedtime,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            "今日睡眠品質",
+                            LanguageTranslator.get("health_status", langCode),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            "上次同步: $lastSyncTime",
+                            if (langCode.startsWith("zh")) "上次同步: $lastSyncTime" else "Last Synced: $lastSyncTime",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = {
-                            if (!isSyncing) {
-                                isSyncing = true
-                                coroutineScope.launch {
-                                    onReSync()
-                                    isSyncing = false
-                                    android.widget.Toast.makeText(context, "睡眠資料已更新！", android.widget.Toast.LENGTH_SHORT).show()
-                                }
+
+                FilledTonalIconButton(
+                    onClick = {
+                        if (!isSyncing) {
+                            isSyncing = true
+                            coroutineScope.launch {
+                                onReSync()
+                                isSyncing = false
+                                android.widget.Toast.makeText(context, "睡眠資料已更新！", android.widget.Toast.LENGTH_SHORT).show()
                             }
-                        },
-                        modifier = Modifier.size(36.dp).testTag("resync_sleep_button")
-                    ) {
-                        if (isSyncing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                strokeWidth = 1.5.dp
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "Re-sync",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                                modifier = Modifier.size(18.dp)
-                            )
                         }
+                    },
+                    modifier = Modifier.size(38.dp).testTag("resync_sleep_button")
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Sync,
+                            contentDescription = "Re-sync",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Grid of sleep metrics
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                SleepMetricItem(
-                    icon = Icons.Default.Bedtime,
-                    label = "睡眠時數",
-                    value = "${"%.1f".format(sleep.hours)}h",
-                    tint = themed.accent,
-                    isNight = isNight
-                )
-                SleepMetricItem(
-                    icon = Icons.Default.Air,
-                    label = "打鼾",
-                    value = "${sleep.snoringMinutes}m",
-                    tint = themed.accent.copy(alpha = 0.8f),
-                    isNight = isNight
-                )
-                SleepMetricItem(
-                    icon = Icons.Default.Sick,
-                    label = "咳嗽",
-                    value = "${sleep.coughCount}次",
-                    tint = Color(0xFFF87171),
-                    isNight = isNight
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "健康報告建議",
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.padding(bottom = 8.dp)
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            SleepVisualizer(
+                hours = sleep.hours,
+                qualityScore = sleep.qualityScore,
+                accentColor = MaterialTheme.colorScheme.primary,
+                isNight = isNight
             )
-            
-            AnimatedContent(
-                targetState = briefingState,
-                transitionSpec = {
-                    (fadeIn(animationSpec = tween(600, easing = LinearOutSlowInEasing)) + 
-                     expandVertically(animationSpec = tween(600, easing = LinearOutSlowInEasing)))
-                        .togetherWith(fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300)))
-                },
-                label = "briefing_status_transition"
-            ) { state ->
-                when (state) {
-                    is BriefingState.Loading -> {
-                        BriefingShimmer()
-                    }
-                    is BriefingState.Success -> {
-                        val haptic = LocalHapticFeedback.current
-                        LaunchedEffect(state) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                        Text(
-                            state.content,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.85f),
-                            lineHeight = 18.sp
-                        )
-                    }
-                    is BriefingState.Error -> {
-                        Text(
-                            "暫時無法生成分析",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.4f)
-                        )
-                    }
-                    else -> {
-                        Text(
-                            "等待同步數據以生成分析...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-            }
         }
-    }
-}
-
-@Composable
-fun BriefingShimmer() {
-    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
-    val xOffset by infiniteTransition.animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmer_offset"
-    )
-
-    val shimmerColors = listOf(
-        Color.White.copy(alpha = 0.05f),
-        Color.White.copy(alpha = 0.15f),
-        Color.White.copy(alpha = 0.05f),
-    )
-
-    val brush = Brush.linearGradient(
-        colors = shimmerColors,
-        start = Offset(xOffset * 500f, 0f),
-        end = Offset(xOffset * 500f + 250f, 100f)
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(brush)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.7f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(brush)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(brush)
-        )
-    }
-}
-
-@Composable
-fun SleepMetricItem(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    label: String,
-    value: String,
-    tint: Color,
-    isNight: Boolean
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
     }
 }
 
@@ -2614,87 +3006,186 @@ fun WeatherCard(
     weatherUnit: String,
     isNight: Boolean,
     isLoading: Boolean = false,
+    langCode: String = "system_default",
     onWeatherClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
+    val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
 
-    GlassmorphicCard(
-        modifier = modifier,
+    ElevatedCard(
         onClick = onWeatherClick,
-        containerColor = themed.container,
-        borderColors = themed.border,
-        glowColor = themed.glow,
-        isLoading = isLoading
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                WeatherAnimatedIcon(
-                    condition = weather.condition,
-                    isNight = isNight,
-                    modifier = Modifier.size(52.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    // Beautiful Location with status badge
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header with Location and Current Weather Badge
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Icon(
-                            imageVector = if (weather.isGpsLocated) Icons.Default.MyLocation else Icons.Default.LocationOn,
-                            contentDescription = "氣候位置定位狀況",
-                            tint = if (weather.isGpsLocated) AuroraMint else Color(0xFF60A5FA),
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = weather.locationName,
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        // Smart positioning tag
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = if (weather.isGpsLocated) AuroraMint.copy(alpha = 0.15f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = if (weather.isGpsLocated) "GPS 實時" else "預設城市",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
-                                color = if (weather.isGpsLocated) AuroraMint else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.WbSunny,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = weather.locationName.ifBlank { "台北市" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = weather.condition,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
                     Text(
-                        weather.condition,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "最高 ${formatTemperature(weather.maxTemp, weatherUnit)} / 最低 ${formatTemperature(weather.minTemp, weatherUnit)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                        text = "${formatTemperature(weather.currentTemp, weatherUnit)}°$weatherUnit",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 }
             }
-            
-            Text(
-                text = formatTemperature(weather.currentTemp, weatherUnit),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+
+            // Hourly Forecast Pills Row
+            if (weather.hourlyForecast.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    weather.hourlyForecast.take(6).forEach { hourly ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = hourly.time,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                WeatherAnimatedIcon(
+                                    condition = hourly.condition,
+                                    isNight = isNight,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${hourly.temperature}°",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+
+            // Rain & Feels-like Temperature Info Cards
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Rain Card
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.WaterDrop,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isZh) "降雨機率" else "Precipitation",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "${weather.precipitationProb}%",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Feels Like Card
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Thermostat,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isZh) "體感溫度" else "Feels Like",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "${weather.apparentTemp}°$weatherUnit",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2708,97 +3199,119 @@ fun NewsCard(
     isNight: Boolean,
     activeTheme: PremiumLayoutTheme,
     isLoading: Boolean = false,
+    langCode: String = "system_default",
     onNewsModeChange: (String) -> Unit,
     onItemClick: (NewsItem) -> Unit
 ) {
-    val systemPrimary = MaterialTheme.colorScheme.primary
-    val themed = remember(weather, isNight, systemPrimary) { getWeatherThemedColors(weather, isNight, systemPrimary) }
+    val isZh = LanguageTranslator.normalizeLanguage(langCode).startsWith("zh")
 
-    GlassmorphicCard(
-        modifier = Modifier,
-        containerColor = themed.container,
-        borderColors = themed.border,
-        glowColor = themed.glow,
-        isLoading = isLoading
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    "今日重點新聞",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                
-                // Beautiful capsules selector for Local vs International News
-                Row(
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(50))
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    listOf("local" to "在地", "international" to "國際").forEach { (code, label) ->
-                        val active = newsMode == code
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f) else Color.Transparent,
-                                    RoundedCornerShape(50)
-                                )
-                                .clickable { if (!active) onNewsModeChange(code) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium,
-                                color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Newspaper,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = if (isZh) "今日焦點新聞" else "Today's Top News",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Text(
+                        text = if (isZh) "即時" else "Live",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+
             if (news.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().height(90.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = themed.accent, strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("偏好切換中，AI 精準簡報生成中...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text(
+                            text = if (isZh) "新聞簡報載入中..." else "Loading news briefing...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             } else {
                 val listToRender = news.take(displayedNewsCount)
                 listToRender.forEachIndexed { index, item ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onItemClick(item) }
-                            .padding(vertical = 12.dp)
+                    Surface(
+                        onClick = { onItemClick(item) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     ) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (item.url.isNullOrBlank()) "點擊可開啟深度放大視窗研究" else "點擊深入探討並閱讀 Google News 來源",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    if (index < listToRender.size - 1) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = item.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isZh) "1 小時前 • 焦點新聞" else "1h ago • Top News",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Read more",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2927,113 +3440,24 @@ fun getBackgroundBrush(condition: String, isNight: Boolean = false): Brush {
     if (isNight) {
         // Deep dark blue / space black background with distinct weather undertones
         return when {
-            condition.contains("雷") -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF0B0F19), // Midnight black
-                    Color(0xFF1E1B4B), // Deep indigo
-                    Color(0xFF312E81), // Dark electric purple hint
-                    Color(0xFF02040A)  // Space black
-                )
-            )
-            condition.contains("雨") -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF0F172A), // Slate black
-                    Color(0xFF1E3A8A), // Rainy navy
-                    Color(0xFF172554), // Deep wet blue
-                    Color(0xFF030712)  // Void black
-                )
-            )
-            condition.contains("雪") -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF1E293B), // Cool slate
-                    Color(0xFF0F766E), // Arctic teal undertone
-                    Color(0xFF0F172A)  // Deep midnight
-                )
-            )
-            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF0F172A), // Midnight gray
-                    Color(0xFF334155), // Overcast slate gray
-                    Color(0xFF1E293B), // Dark space blue
-                    Color(0xFF02040A)  // Pure black
-                )
-            )
-            condition == "晴朗" -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF0B132B), // Clear dark night sky
-                    Color(0xFF1C2541), // Deep navy
-                    Color(0xFF1E1B4B), // Cosmic indigo glow
-                    Color(0xFF02040A)  // Space void
-                )
-            )
-            else -> Brush.verticalGradient(
-                listOf(
-                    Color(0xFF0F172A), // Dark slate
-                    Color(0xFF1E1B4B), // Cosmic violet tint
-                    Color(0xFF030712)
-                )
-            )
+            condition.contains("雷") -> SolidColor(Color(0xFF0B0F19))
+            condition.contains("雨") -> SolidColor(Color(0xFF0F172A))
+            condition.contains("雪") -> SolidColor(Color(0xFF1E293B))
+            condition.contains("霧") || condition.contains("陰") || condition.contains("多雲") -> SolidColor(Color(0xFF0F172A))
+            condition == "晴朗" -> SolidColor(Color(0xFF0B132B))
+            else -> SolidColor(Color(0xFF0F172A))
         }
     }
 
     // Morning / Daytime: Starts from brilliant whites but transitions into vibrant weather tones ("早上偏白色但對應天氣")
     return when {
-        condition.contains("雷") -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFFFFFFF),                
-                Color(0xFFE4E4E7), // Light mist grey
-                Color(0xFFC7D2FE), // Pale electric lavender-blue
-                Color(0xFF93C5FD)  // Airy pale sky
-            )
-        )
-        condition.contains("雨") -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFFFFFFF),                
-                Color(0xFFF0F9FF), // Extremely light blue
-                Color(0xFFE0F2FE), // Soft misty blue
-                Color(0xFFBAE6FD)  // Fresh light sky rain
-            )
-        )
-        condition.contains("雪") -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFF1F5F9), // Ice-white
-                Color(0xFFE0F2FE), // Cool cyan-white glow
-                Color(0xFFE2E8F0)  // Nordic soft slate
-            )
-        )
-        condition.contains("霧") || condition.contains("陰") -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFF4F4F5), // Diffused light grey
-                Color(0xFFE4E4E7), // Elegant misty zinc
-                Color(0xFFD4D4D8)  // Soft cloud mist
-            )
-        )
-        condition.contains("多雲") -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFF8FAFC), // Air-light white
-                Color(0xFFEFF6FF), // Soft morning light blue
-                Color(0xFFDBEAFE)  // Sweet lavender-tinged pale indigo
-            )
-        )
-        condition == "晴朗" -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFBAE6FD), // Glowing light sky blue
-                Color(0xFFE0F2FE), // Soft azure transition
-                Color(0xFFF0F9FF), // Pure morning white-blue
-                Color(0xFFFFFFFF)  // Clean white
-            )
-        )
-        else -> Brush.verticalGradient(
-            listOf(
-                Color(0xFFE0F2FE), // Soft sky blue
-                Color(0xFFEFF6FF), // Airy clouds
-                Color(0xFFF8FAFC), // Very light neutral
-                Color(0xFFFFFFFF)  // Clean white sand
-            )
-        )
+        condition.contains("雷") -> SolidColor(Color(0xFFE4E4E7))
+        condition.contains("雨") -> SolidColor(Color(0xFFF0F9FF))
+        condition.contains("雪") -> SolidColor(Color(0xFFF1F5F9))
+        condition.contains("霧") || condition.contains("陰") -> SolidColor(Color(0xFFF4F4F5))
+        condition.contains("多雲") -> SolidColor(Color(0xFFF8FAFC))
+        condition == "晴朗" -> SolidColor(Color(0xFFE0F2FE))
+        else -> SolidColor(Color(0xFFF8FAFC))
     }
 }
 
@@ -3076,8 +3500,11 @@ fun SettingsScreen(
     var editIsBiometricEnabled by remember { mutableStateOf(settings.isBiometricEnabled) }
     var editTtsLanguage by remember { mutableStateOf(settings.ttsLanguage) }
 
-
     val context = LocalContext.current
+    val notificationPrefs = remember { context.getSharedPreferences("briefing_notification_prefs", Context.MODE_PRIVATE) }
+    var editNotificationEnabled by remember { mutableStateOf(notificationPrefs.getBoolean("notification_enabled", false)) }
+    var editNotificationHour by remember { mutableStateOf(notificationPrefs.getInt("notification_hour", 8)) }
+    var editNotificationMinute by remember { mutableStateOf(notificationPrefs.getInt("notification_minute", 0)) }
 
     Box(
         modifier = Modifier
@@ -3140,6 +3567,26 @@ fun SettingsScreen(
                             ttsLanguage = editTtsLanguage
                         )
                         onSave(updated)
+                        
+                        // Save notification SharedPreferences states
+                        notificationPrefs.edit().apply {
+                            putBoolean("notification_enabled", editNotificationEnabled)
+                            putInt("notification_hour", editNotificationHour)
+                            putInt("notification_minute", editNotificationMinute)
+                            apply()
+                        }
+                        
+                        // Schedule or cancel the alarm
+                        if (editNotificationEnabled) {
+                            com.example.util.BriefingAlarmScheduler.scheduleDailyNotification(
+                                context,
+                                editNotificationHour,
+                                editNotificationMinute
+                            )
+                        } else {
+                            com.example.util.BriefingAlarmScheduler.cancelDailyNotification(context)
+                        }
+                        
                         android.widget.Toast.makeText(context, LanguageTranslator.get("toast_saved", editTtsLanguage), android.widget.Toast.LENGTH_SHORT).show()
                         onBack()
                     },
@@ -3164,62 +3611,48 @@ fun SettingsScreen(
                 // Section 1: 登入與帳號設定 (Login & Account)
                 item {
                     SettingsSectionCard(title = LanguageTranslator.get("section_1", editTtsLanguage)) {
-                        if (editUsername.contains("Google") || editUsername.contains("gmail")) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AuroraMint)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("已登入：$editUsername", color = Color.White)
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { editUsername = "訪客" },
-                                colors = ButtonDefaults.buttonColors(containerColor = AuroraDeepIndigo),
-                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF1E293B),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4285F4).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("登出並重設為訪客", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            Button(
-                                onClick = { editUsername = "Google 使用者" },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                                modifier = Modifier.fillMaxWidth().height(48.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("G", fontWeight = FontWeight.ExtraBold, color = Color.Blue, fontSize = 20.sp)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("使用 Google 帳號登入", color = Color.DarkGray, fontWeight = FontWeight.Bold)
+                                UserAvatar(username = editUsername, size = 48.dp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (editUsername.isBlank()) "Jeremy" else editUsername,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = "已連線",
+                                            tint = Color(0xFF34A853),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Google 服務 · 已同步 Google 帳戶頭像與名稱",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = AuroraSlate
+                                    )
                                 }
                             }
                         }
                         
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            "設定顯示暱稱",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = AuroraSlate,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = editUsername,
-                            onValueChange = { editUsername = it },
-                            placeholder = { Text("例如：小明") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("username_settings_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = AuroraMint,
-                                unfocusedBorderColor = AuroraSlate
-                            ),
-                            singleLine = true
-                        )
-                        
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                         SettingsRow(
                             label = "導覽列返回設定",
-                            description = "開啟後，點開天气詳細，會於外層右上端額外加上浮動返回簡報捷徑",
+                            description = "開啟後，點開天氣詳細，會於外層右上端額外加上浮動返回簡報捷徑",
                             checked = editShowFloatingBackButton,
                             onCheckedChange = { editShowFloatingBackButton = it },
                             testTag = "floating_back_settings_switch"
@@ -3396,8 +3829,8 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
-                                "gemini-1.5-flash" to "1.5 Flash",
-                                "gemini-1.5-pro" to "1.5 Pro",
+                                "gemini-3.5-flash" to "3.5 Flash",
+                                "gemini-3.1-pro-preview" to "3.1 Pro",
                                 "aicore" to "AICore"
                             ).forEach { (code, label) ->
                                 val selected = editGeminiModelSelected == code
@@ -3536,6 +3969,72 @@ fun SettingsScreen(
                                             Text("取消", color = AuroraMidnight, fontWeight = FontWeight.Bold)
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section 6a: 每日定時提醒通知 (Daily Briefing Notification)
+                item {
+                    SettingsSectionCard(title = "定時簡報提醒設定") {
+                        SettingsRow(
+                            label = "啟用每日定時通知提醒",
+                            description = "開啟後，系統將在您設定的特定時間內自動發送通知說：「您的早晨簡報已經準備好囉！」",
+                            checked = editNotificationEnabled,
+                            onCheckedChange = { editNotificationEnabled = it },
+                            testTag = "notification_enabled_switch"
+                        )
+                        
+                        if (editNotificationEnabled) {
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "提醒時間設定",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        "點擊右側時間按鈕，即可自訂每日發送早晨簡報通知的時間",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = AuroraSlate.copy(alpha = 0.8f)
+                                    )
+                                }
+                                
+                                Button(
+                                    onClick = {
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, h, m ->
+                                                editNotificationHour = h
+                                                editNotificationMinute = m
+                                            },
+                                            editNotificationHour,
+                                            editNotificationMinute,
+                                            true // 24小時制
+                                        ).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AuroraMint),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.testTag("notification_time_picker_button")
+                                ) {
+                                    val formattedTime = String.format("%02d:%02d", editNotificationHour, editNotificationMinute)
+                                    Text(
+                                        text = formattedTime,
+                                        color = AuroraMidnight,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
                             }
                         }
@@ -3935,15 +4434,7 @@ fun TemperatureTrendLineChart(
 
                 drawPath(
                     path = areaPath,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF38BDF8).copy(alpha = 0.35f), // Recharts primary sky blue fill
-                            Color(0xFF0284C7).copy(alpha = 0.04f),
-                            Color.Transparent
-                        ),
-                        startY = topOffset,
-                        endY = topOffset + chartHeight
-                    )
+                    color = Color(0xFF38BDF8).copy(alpha = 0.15f)
                 )
 
                 // 4. Draw the actual temperature trend curve (Sky Blue)
@@ -4011,7 +4502,7 @@ fun TemperatureTrendLineChart(
                     val timeTextResult = textMeasurer.measure(
                         text = timeVal,
                         style = TextStyle(
-                            color = if (isDark) Color.White.copy(alpha = 0.65f) else Color(0xFF0F172A).copy(alpha = 0.65f),
+                            color = if (isDark) Color.White.copy(alpha = 0.85f) else Color(0xFF0F172A).copy(alpha = 0.65f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -4100,7 +4591,7 @@ fun SecurityLockScreen(
                 Text(
                     text = "為確保您的健康指數、昨夜深度睡眠數據、以及即時行事曆等隱私安全，請進行裝置與生物特徵驗證來解鎖首頁。",
                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = Color.White.copy(alpha = 0.85f),
                     textAlign = TextAlign.Center
                 )
 
@@ -4154,9 +4645,9 @@ fun CalendarViewerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(brush = if (isNight) {
-                Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617)))
+                SolidColor(Color(0xFF0F172A))
             } else {
-                Brush.verticalGradient(listOf(Color(0xFFF8FAFC), Color(0xFFE2E8F0)))
+                SolidColor(Color(0xFFF8FAFC))
             })
             .statusBarsPadding()
             .navigationBarsPadding()
@@ -4200,9 +4691,9 @@ fun CalendarViewerScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Calendar Task Viewer",
+                        text = "日曆與待辦事項檢視器",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isNight) Color.White.copy(alpha = 0.5f) else Color(0xFF64748B)
+                        color = if (isNight) Color.White.copy(alpha = 0.7f) else Color(0xFF64748B)
                     )
                 }
             }
@@ -4259,7 +4750,7 @@ fun CalendarViewerScreen(
                                     lineHeight = 22.sp,
                                     textAlign = TextAlign.Center
                                 ),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
@@ -4333,6 +4824,16 @@ fun CalendarViewerScreen(
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // Pixel-style Month Calendar View card (shows when clicked in)
+                MonthlyCalendarWidget(
+                    events = events,
+                    activeTheme = activeTheme,
+                    isNight = isNight,
+                    onDayClick = {}
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 if (events.isEmpty()) {
                     Box(
@@ -4381,7 +4882,7 @@ fun CalendarViewerScreen(
                                 Text(
                                     text = "請確認您的系統行事曆中是否有新增當前日期活動，或是稍後下拉頁面重新同步整理。",
                                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -4419,15 +4920,17 @@ fun CalendarEventItemCard(
     isNight: Boolean
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    
-    GlassmorphicCard(
+
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("calendar_event_item_$index")
             .clickable { isExpanded = !isExpanded },
-        containerColor = activeTheme.cardBg.copy(alpha = 0.75f),
-        borderColors = activeTheme.cardBorderGlowColors,
-        glowColor = activeTheme.accentColor.copy(alpha = 0.15f)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
@@ -4444,14 +4947,7 @@ fun CalendarEventItemCard(
                         .width(4.dp)
                         .height(36.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    activeTheme.accentColor,
-                                    activeTheme.secondaryAccent
-                                )
-                            )
-                        )
+                        .background(activeTheme.accentColor)
                 )
                 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -4482,7 +4978,7 @@ fun CalendarEventItemCard(
                         Text(
                             text = formatEventTimeSpanDetail(event.startTime, event.endTime),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                         )
                     }
                 }
@@ -4491,7 +4987,7 @@ fun CalendarEventItemCard(
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
                         contentDescription = if (isExpanded) "收合行程詳細資訊" else "展開行程詳細資訊",
-                        tint = if (isNight) Color.White.copy(alpha = 0.4f) else Color(0xFF94A3B8),
+                        tint = if (isNight) Color.White.copy(alpha = 0.6f) else Color(0xFF94A3B8),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -4701,3 +5197,140 @@ fun Modifier.expressiveBounce(enabled: Boolean = true): Modifier {
 }
 
 
+
+@Composable
+fun SleepDetailScreen(
+    sleep: SleepInfo,
+    briefingState: BriefingState,
+    isNight: Boolean,
+    activeTheme: PremiumLayoutTheme,
+    onBack: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(24.dp)
+            .statusBarsPadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Bedtime,
+                        contentDescription = null,
+                        tint = activeTheme.accentColor,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "睡眠分析詳細",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            SleepVisualizer(
+                hours = sleep.hours,
+                qualityScore = sleep.qualityScore,
+                accentColor = activeTheme.accentColor,
+                isNight = isNight
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text(
+                "• 睡眠詳細數據",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = activeTheme.accentColor
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                SleepMetricItem(
+                    icon = Icons.Default.Bedtime,
+                    label = "睡眠時數",
+                    value = "${"%.1f".format(sleep.hours)}h",
+                    tint = activeTheme.accentColor,
+                    isNight = isNight
+                )
+                SleepMetricItem(
+                    icon = Icons.Default.Air,
+                    label = "打鼾",
+                    value = "${sleep.snoringMinutes}m",
+                    tint = activeTheme.accentColor.copy(alpha = 0.8f),
+                    isNight = isNight
+                )
+                SleepMetricItem(
+                    icon = Icons.Default.Sick,
+                    label = "咳嗽",
+                    value = "${sleep.coughCount}次",
+                    tint = Color(0xFFF87171),
+                    isNight = isNight
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            Text(
+                "• 健康報告建議",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = activeTheme.accentColor
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            AnimatedContent(
+                targetState = briefingState,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(600)).togetherWith(fadeOut(animationSpec = tween(300)))
+                },
+                label = "briefing_status_transition"
+            ) { state ->
+                when (state) {
+                    is BriefingState.Loading -> {
+                        BriefingShimmer()
+                    }
+                    is BriefingState.Success -> {
+                        Text(
+                            state.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 24.sp
+                        )
+                    }
+                    is BriefingState.Error -> {
+                        Text(
+                            "暫時無法生成分析",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    else -> {
+                        Text(
+                            "等待同步數據以生成分析",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(60.dp))
+        }
+    }
+}

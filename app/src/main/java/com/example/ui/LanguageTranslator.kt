@@ -183,18 +183,23 @@ object LanguageTranslator {
         )
     )
 
+    fun normalizeLanguage(lang: String): String {
+        val actualLang = if (lang == "system_default") Locale.getDefault().toString() else lang
+        val normLang = actualLang.replace("-", "_")
+        return if (normLang.lowercase().startsWith("zh")) {
+            if (normLang.uppercase().contains("CN") || normLang.uppercase().contains("HANS")) "zh_CN"
+            else if (normLang.uppercase().contains("HK") || normLang.uppercase().contains("MO")) "zh_HK"
+            else "zh_TW"
+        } else {
+            normLang.substringBefore("_").lowercase()
+        }
+    }
+
     /**
      * Get translated text string by key and fallback
      */
     fun get(key: String, lang: String): String {
-        val actualLang = if (lang == "system_default") Locale.getDefault().toString() else lang
-        
-        // Simple direct translation fallbacks
-        val langKey = if (actualLang.startsWith("zh")) {
-            if (actualLang.contains("CN")) "zh_CN" else if (actualLang.contains("HK")) "zh_HK" else "zh_TW"
-        } else {
-            actualLang.substringBefore("_")
-        }
+        val langKey = normalizeLanguage(lang)
         
         val localizedMap = translations[langKey]
         if (localizedMap != null) {
@@ -245,10 +250,10 @@ object LanguageTranslator {
         currentTemp: String,
         eventCount: Int
     ): String {
-        val actualLang = if (lang == "system_default") Locale.getDefault().toString() else lang
+        val langKey = normalizeLanguage(lang)
         val cleanGreeting = greeting.replace(Regex("[🌅☀️🚀🍱☕🌌💤🦉]"), "").trim()
         
-        return when (actualLang) {
+        return when (langKey) {
             "en" -> {
                 val engGreeting = when {
                     greeting.contains("早") -> "Good morning"
@@ -283,7 +288,7 @@ object LanguageTranslator {
                     else -> "こんにちは"
                 }
                 val weatherSection = if (condition.isNotEmpty()) "、今日の天気は $condition、気温は約 $currentTemp 度です" else ""
-                val eventSection = if (eventCount > 0) "、本日は $eventCount 件の予定があります" else "、本日の予定はありません"
+                val eventSection = if (eventCount > 0) "、本日は $eventCount 件 of 予定があります" else "、本日の予定はありません"
                 "${jaGreeting}、${username}さん！${weatherSection}${eventSection}。"
             }
             "ko" -> {
@@ -371,7 +376,7 @@ object LanguageTranslator {
                     else -> "مرحباً"
                 }
                 val weatherSection = if (condition.isNotEmpty()) "الطقس هو $condition مع $currentTemp درجة." else ""
-                val eventSection = if (eventCount > 0) "لديك $eventCount أحداث اليوم." else "لا توجد أحداث مجдولة اليوم."
+                val eventSection = if (eventCount > 0) "لديك $eventCount أحداث اليوم." else "لا توجد أحداث مجدولة اليوم."
                 "$arGreeting، $username! $weatherSection $eventSection"
             }
             "th" -> {
@@ -398,7 +403,7 @@ object LanguageTranslator {
             }
             else -> {
                 // Determine if we should use Eastern or Western generic fallback
-                val lk = if (actualLang.startsWith("zh")) actualLang else actualLang.substringBefore("_")
+                val lk = if (langKey.startsWith("zh")) langKey else langKey.substringBefore("_")
                 val isEastern = lk == "zh_TW" || lk == "zh_HK" || lk == "zh_CN" || lk == "ja" || lk == "ko" || lk == "th" || lk == "vi"
                 if (isEastern) {
                     val weatherSection = if (condition.isNotEmpty()) "，天氣$condition，氣溫 $currentTemp" else ""

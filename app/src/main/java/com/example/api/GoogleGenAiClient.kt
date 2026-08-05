@@ -10,26 +10,30 @@ import kotlinx.coroutines.withContext
 
 object GoogleGenAiClient {
 
+    private fun mapToActualModelName(modelName: String): String {
+        return when (modelName.lowercase()) {
+            "gemini flash latest", "gemini-1.5-flash", "gemini-nano", "aicore" -> "gemini-3.5-flash"
+            "gemini-1.5-pro" -> "gemini-3.1-pro-preview"
+            else -> modelName
+        }
+    }
+
     /**
      * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContent(context: Context, prompt: String, modelName: String = "Gemini Flash Latest"): String {
+    suspend fun generateContent(context: Context, prompt: String, modelName: String = "gemini-3.5-flash"): String {
         return generateContentServerSide(prompt, modelName)
     }
 
     /**
      * Instantiates the official Google GenAI GenerativeModel object using the registered keys.
      */
-    fun getModel(modelName: String = "Gemini Flash Latest"): GenerativeModel {
+    fun getModel(modelName: String = "gemini-3.5-flash"): GenerativeModel {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val config = generationConfig {
             temperature = 0.7f
         }
-        val actualModelName = when (modelName) {
-            "Gemini Flash Latest" -> "gemini-1.5-flash"
-            "aicore" -> "gemini-1.5-flash"
-            else -> modelName
-        }
+        val actualModelName = mapToActualModelName(modelName)
         return GenerativeModel(
             modelName = actualModelName,
             apiKey = apiKey,
@@ -40,18 +44,13 @@ object GoogleGenAiClient {
     /**
      * Executes content generation query using Google Generative AI SDK (com.google.ai.client.generativeai)
      */
-    suspend fun generateContentServerSide(prompt: String, modelName: String = "Gemini Flash Latest"): String = withContext(Dispatchers.IO) {
+    suspend fun generateContentServerSide(prompt: String, modelName: String = "gemini-3.5-flash"): String = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             throw IllegalStateException("未設定 valid API 金鑰。")
         }
-        val actualModel = when (modelName) {
-            "gemini-nano" -> "Gemini Flash Latest"
-            "aicore" -> "gemini-1.5-flash"
-            else -> modelName
-        }
         try {
-            val model = getModel(actualModel)
+            val model = getModel(modelName)
             val response = model.generateContent(prompt)
             response.text ?: throw IllegalStateException("無內容返回")
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -67,7 +66,7 @@ object GoogleGenAiClient {
     }
 
     // Deprecated or compatibility wrapper
-    suspend fun generateContent(prompt: String, modelName: String = "Gemini Flash Latest"): String {
+    suspend fun generateContent(prompt: String, modelName: String = "gemini-3.5-flash"): String {
         return generateContentServerSide(prompt, modelName)
     }
 }

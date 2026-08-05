@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_SLEEP_SESSION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <queries>
         <package android:name="com.google.android.apps.weather" />
@@ -48,6 +49,12 @@
         <receiver android:name=".receiver.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".receiver.AlarmReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.ACTION_TRIGGER_BRIEFING" />
             </intent-filter>
         </receiver>
     </application>
